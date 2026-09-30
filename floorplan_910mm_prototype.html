@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>910mm間取りプロトタイプ</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#222;background:#eee}
+  header{height:48px;background:#222;color:#fff;display:flex;align-items:center;padding:0 14px;gap:18px}
+  header strong{font-size:15px}
+  header span{font-size:12px;color:#bbb}
+  main{display:grid;grid-template-columns:210px 1fr 280px;height:calc(100vh - 48px)}
+  aside{background:#fafafa;border-right:1px solid #ccc;padding:12px;overflow:auto}
+  .right{border-left:1px solid #ccc;border-right:0}
+  h3{font-size:13px;margin:8px 0}
+  button{width:100%;padding:8px;margin:3px 0;border:1px solid #bbb;background:#fff;border-radius:4px;text-align:left;cursor:pointer}
+  button:hover{background:#eee}
+  .hint{font-size:11px;color:#666;line-height:1.5;margin:8px 0}
+  .canvas{position:relative;overflow:auto;background:#ddd}
+  svg{display:block;background:#fff;margin:30px;box-shadow:0 1px 5px #999}
+  label{display:block;font-size:12px;margin-top:9px;color:#555}
+  input,select{width:100%;padding:6px;border:1px solid #aaa;border-radius:3px;background:#fff}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .status{position:absolute;left:12px;bottom:10px;background:#fff;padding:5px 8px;border:1px solid #bbb;border-radius:3px;font-size:11px}
+  .selected{outline:2px solid #1976d2}
+  #objects [data-id]{cursor:grab}
+  #objects [data-id]:active{cursor:grabbing}
+  .legend{font-size:11px;line-height:1.6}
+  .kbd{font-family:monospace;background:#eee;border:1px solid #ccc;border-radius:3px;padding:1px 4px}
+  .empty{color:#777;font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <strong>910mm 間取り CAD — Prototype</strong>
+  <span>壁を主役にした2D図面エディタ</span>
+</header>
+<main>
+  <aside>
+    <h3>部品</h3>
+    <button onclick="newWall()">＋ 壁</button>
+    <button onclick="addFixture('toilet')">＋ トイレ</button>
+    <button onclick="addFixture('bath')">＋ ユニットバス</button>
+    <button onclick="addFixture('kitchen')">＋ キッチン</button>
+    <button onclick="addFixture('wash')">＋ 洗面台</button>
+    <button onclick="addFixture('washer')">＋ 洗濯機</button>
+    <button onclick="addFixture('door')">＋ ドア</button>
+    <button onclick="addFixture('window')">＋ 窓</button>
+    <button onclick="addFixture('stairs')">＋ 階段</button>
+    <h3>図面</h3>
+    <button onclick="zoom(1.2)">＋ 拡大</button>
+    <button onclick="zoom(.833333)">－ 縮小</button>
+    <button onclick="fit()">図面を中央へ</button>
+    <button onclick="saveJSON()">JSON保存</button>
+    <button onclick="loadJSON()">JSON読込</button>
+    <button onclick="window.print()">印刷 / PDF</button>
+    <p class="hint">
+      数値入力中心。移動だけドラッグできます。<br>
+      内部座標はmm。太線は壁の実体です。
+    </p>
+    <div class="legend">
+      <b>ショートカット</b><br>
+      <span class="kbd">W</span> 壁追加<br>
+      <span class="kbd">T</span> トイレ<br>
+      <span class="kbd">B</span> 浴室<br>
+      <span class="kbd">K</span> キッチン<br>
+      <span class="kbd">D</span> ドア<br>      <span class="kbd">R</span> 壁を90°回転<br>
+      <span class="kbd">F2</span> 選択部品を編集<br>
+      <span class="kbd">Delete</span> 削除<br>
+      <span class="kbd">矢印</span> 移動（91mm単位）
+    </div>
+  </aside>
+
+  <section class="canvas" id="canvas">
+    <svg id="svg" width="1200" height="850" viewBox="0 0 1200 850"
+         xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid455" width="45.5" height="45.5" patternUnits="userSpaceOnUse">
+          <path d="M45.5 0H0V45.5" fill="none" stroke="#e4e4e4"/>
+        </pattern>
+        <pattern id="grid910" width="91" height="91" patternUnits="userSpaceOnUse">
+          <rect width="91" height="91" fill="url(#grid455)"/>
+          <path d="M91 0H0V91" fill="none" stroke="#ccc"/>
+        </pattern>
+      </defs>
+      <rect width="1200" height="850" fill="url(#grid910)"/>
+      <g id="objects"></g>
+    </svg>
+    <div class="status" id="status">910mmグリッド / 選択なし</div>
+  </section>
+
+  <aside class="right">
+    <h3>選択中の部品</h3>
+    <div id="properties" class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>
+  </aside>
+</main>
+
+<script>
+const svg=document.getElementById('svg'), objects=document.getElementById('objects');
+let data={version:2,units:"mm",grid:{major:910,minor:455},walls:[],fixtures:[]};
+let selected=null, scale=0.1; // 1mm = .1px-ish visually; SVG viewBox stays simple
+let uid=1;
+
+function px(mm){return mm*0.1}
+function mm(pxv){return pxv/0.1}
+function snap(v){return Math.round(v/91)*91}
+
+function newWall(){
+  const n={id:"w"+uid++,type:"wall",x:910,y:910,width:2730,height:105,thickness:140};
+  data.walls.push(n); selected=n; render();
+}
+function addFixture(type){
+  const defs={
+    toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,100,"ドア"],
+    window:[1650,100,"窓"], stairs:[910,2730,"階段"]
+  };
+  const d=defs[type]||[910,910,type];
+  const n={id:"f"+uid++,type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  data.fixtures.push(n);selected=n;render();
+}
+function all(){return [...data.walls,...data.fixtures]}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+function render(){
+  objects.innerHTML="";
+  for(const w of data.walls){
+    // The wall's reference point is its inner corner:
+    // the grid point corresponds to the corner + thickness/2.
+    // length is the dimension used for the wall body excluding the half-thickness
+    // extensions at the two ends; displayed body length is length + thickness.
+    const a=(w.angle||0)*Math.PI/180;
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+
+    // The grid/reference point IS the wall centerline endpoint.
+    // The physical wall extends half its thickness before/after the centerline endpoints.
+    // Example: horizontal 140mm wall => left edge is 70mm left of the start grid line.
+    const half=px(w.thickness)/2;
+    const ux=Math.cos(a), uy=Math.sin(a);
+    const cx=px(w.x);
+    const cy=px(w.y);
+
+    g.setAttribute("transform",`translate(${cx},${cy}) rotate(${w.angle||0})`);
+    g.dataset.id=w.id;
+    g.addEventListener("pointerdown", e=>startDrag(e,w));
+
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",-half);
+    r.setAttribute("y",-half);
+    r.setAttribute("width",px(w.length+w.thickness));
+    r.setAttribute("height",px(w.thickness));
+    r.setAttribute("fill","#444");
+    g.appendChild(r);
+
+    // Show the nominal wall length and the actual drawn length separately.
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x",px((w.length+w.thickness)/2));
+    t.setAttribute("y",-half-8);
+    t.setAttribute("text-anchor","middle");
+    t.setAttribute("font-size","11");
+    t.textContent=`設定長 ${w.length} mm / 表示長 ${w.length+w.thickness} mm`;
+    g.appendChild(t);
+
+    objects.appendChild(g);
+  }
+  for(const f of data.fixtures){
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
+    g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
+    r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
+    g.appendChild(r);
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x",px(f.width/2));t.setAttribute("y",px(f.height/2)+4);
+    t.setAttribute("text-anchor","middle");t.setAttribute("font-size","11");t.textContent=f.label;
+    g.appendChild(t);objects.appendChild(g);
+  }
+  updateSelection();
+}
+let dragState=null;
+function svgPoint(e){ const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse()); return {x:mm(p.x),y:mm(p.y)}; }
+function startDrag(e,o){ e.stopPropagation(); select(o); const p=svgPoint(e); dragState={obj:o,startX:p.x,startY:p.y,origX:o.x,origY:o.y}; window.addEventListener("pointermove",dragMove); window.addEventListener("pointerup",dragEnd,{once:true}); }
+function dragMove(e){ if(!dragState)return; const p=svgPoint(e); dragState.obj.x=Math.round((dragState.origX+p.x-dragState.startX)/91)*91; dragState.obj.y=Math.round((dragState.origY+p.y-dragState.startY)/91)*91; render(); }
+function dragEnd(){ window.removeEventListener("pointermove",dragMove); dragState=null; }
+function select(o){selected=o;render();showProps()}
+function updateSelection(){
+  document.querySelectorAll('#objects [data-id]').forEach(e=>{
+    if(selected && e.dataset.id===selected.id)e.classList.add('selected'); else e.classList.remove('selected');
+  });
+  document.getElementById('status').textContent=selected?
+    `${selected.type} / x=${selected.x} y=${selected.y} / ${selected.width}×${selected.height} mm`:
+    "910mmグリッド / 選択なし";
+  showProps();
+}
+function showProps(){
+  const p=document.getElementById('properties');
+  if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
+  const isWall=selected.type==="wall";
+  p.innerHTML=`
+    <label>種類</label><input value="${esc(selected.type)}" disabled>
+    <div class="row">
+      <div><label>X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
+      <div><label>Y (mm)</label><input id="pyy" type="number" value="${selected.y}"></div>
+    </div>
+    ${isWall?`
+      <label>長さ (mm)</label><input id="plen" type="number" value="${selected.length}">
+      <div class="row">
+        <div><label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}" step="1"></div>
+        <div><label>壁厚 (mm)</label><input id="pth" type="number" value="${selected.thickness}"></div>
+      </div>
+      <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+      <p class="hint">0°＝右方向、90°＝下方向。壁は始点＋長さ＋角度＋厚さで管理します。</p>
+    `:`
+      <div class="row">
+        <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
+        <div><label>高さ (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
+      </div>
+      <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+    `}
+    <button onclick="applyProps()">値を反映</button>
+    <button onclick="deleteSelected()">削除</button>
+    <p class="hint">寸法は直接入力できます。矢印キーで91mmずつ移動します。</p>
+  `;
+}
+function applyProps(){
+  const q=id=>document.getElementById(id);
+  selected.x=+q("pxx").value;selected.y=+q("pyy").value;
+  if(selected.type==="wall"){
+    selected.length=Math.max(455,+q("plen").value);
+    selected.angle=+q("pang").value;
+    selected.thickness=+q("pth").value;
+  } else {
+    selected.width=+q("pww").value;selected.height=+q("phh").value;
+    selected.angle=+q("pang").value;selected.label=q("plabel").value;
+  }
+  render();
+}
+function changeWallLength(delta){
+  if(!selected || selected.type!=="wall")return;
+  selected.length=Math.max(455, selected.length+delta);
+  render();
+}
+function rotateSelected(delta){
+  if(!selected)return;
+  selected.angle=((selected.angle||0)+delta)%360;
+  if(selected.angle<0)selected.angle+=360;
+  render();
+}
+function deleteSelected(){
+  if(!selected)return;
+  data.walls=data.walls.filter(x=>x!==selected);data.fixtures=data.fixtures.filter(x=>x!==selected);
+  selected=null;render();
+}
+function zoom(f){scale*=f; svg.style.transform=`scale(${scale})`;svg.style.transformOrigin="top left"}
+function fit(){scale=1;svg.style.transform="scale(1)"}
+
+svg.addEventListener("click",()=>{selected=null;render()});
+document.addEventListener("keydown",e=>{
+  if(["INPUT","TEXTAREA"].includes(document.activeElement.tagName))return;
+  const k=e.key.toLowerCase();
+  if(k==="w")newWall();
+  else if(k==="t")addFixture("toilet");
+  else if(k==="b")addFixture("bath");
+  else if(k==="k")addFixture("kitchen");
+  else if(k==="d")addFixture("door");
+  else if(k==="f2" && selected)document.getElementById("pxx")?.focus();
+  else if(k==="r" && selected)rotateSelected(e.shiftKey?-90:90);
+  else if(e.key==="Delete")deleteSelected();
+  else if(selected && ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
+    e.preventDefault();
+    if(e.key==="ArrowLeft")selected.x-=91;
+    if(e.key==="ArrowRight")selected.x+=91;
+    if(e.key==="ArrowUp")selected.y-=91;
+    if(e.key==="ArrowDown")selected.y+=91;
+    render();
+  }
+});
+function saveJSON(){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="floorplan-910mm.json";a.click();
+}
+function loadJSON(){
+  const input=document.createElement("input");input.type="file";input.accept=".json";
+  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{data=JSON.parse(r.result);selected=null;render()}catch(e){alert("JSONを読み込めませんでした")}};r.readAsText(input.files[0])};input.click();
+}
+newWall();
+newWall();
+data.walls[0].x=455;data.walls[0].y=455;data.walls[0].length=3640;data.walls[0].angle=0;data.walls[0].thickness=140;
+data.walls[1].x=455;data.walls[1].y=4095;data.walls[1].length=3640;data.walls[1].angle=0;data.walls[1].thickness=140;
+selected=null;render();
+</script>
+</body>
+</html>
