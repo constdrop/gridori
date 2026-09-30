@@ -47,6 +47,7 @@
     <button onclick="addFixture('washer')">＋ 洗濯機</button>
     <button onclick="addFixture('door')">＋ ドア</button>
     <button onclick="addFixture('window')">＋ 窓</button>
+    <button onclick="addFixture('fixedWindow')">＋ 固定窓</button>
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <h3>図面</h3>
     <button onclick="zoom(1.2)">＋ 拡大</button>
@@ -116,11 +117,38 @@ function addFixture(type){
   const defs={
     toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
     wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,100,"ドア"],
-    window:[1650,100,"窓"], stairs:[910,2730,"階段"]
+    window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"]
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(isWindow(n)){
+    n.centerline=true;
+    if(selected?.type==='wall'){
+      n.x=selected.x;n.y=selected.y;n.angle=selected.angle;n.height=selected.thickness;
+      n.width=Math.min(n.width,selected.length);
+    }
+  }
   data.fixtures.push(n);selected=n;render();
+}
+function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function drawWindow(g,f){
+  const width=px(f.width),depth=px(f.height),sash=Math.min(3,depth/3);
+  function shape(tag,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,value);
+    g.appendChild(n);return n;
+  }
+  // The white opening masks the wall across its full thickness.
+  shape('rect',{x:0,y:-depth/2,width,height:depth,fill:'#fff'});
+  shape('path',{d:`M0 ${-depth/2}V${depth/2} M${width} ${-depth/2}V${depth/2}`,stroke:'#333','stroke-width':1,fill:'none'});
+  if(f.type==='window'){
+    // Two overlapping leaves on either side of the wall centerline.
+    shape('rect',{x:0,y:-sash,width:width*.53,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+    shape('rect',{x:width*.47,y:0,width:width*.53,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+  }else{
+    shape('rect',{x:0,y:-sash/2,width,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+    shape('path',{d:`M0 0H${width}`,stroke:'#333','stroke-width':.6});
+  }
 }
 function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
@@ -162,6 +190,14 @@ function render(){
   }
   for(const f of data.fixtures){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(isWindow(f)){
+      // Retain the position of older windows whose origin was the bounding-box corner.
+      g.setAttribute('transform',f.centerline?
+        `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`:
+        `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)}) translate(0,${px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      drawWindow(g,f);objects.appendChild(g);continue;
+    }
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
     const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
@@ -233,10 +269,11 @@ function showProps(){
     `:`
       <div class="row">
         <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
-        <div><label>高さ (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
+        <div><label>${isWindow(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
     `}
     <button onclick="applyProps()">値を反映</button>
     <button onclick="deleteSelected()">削除</button>

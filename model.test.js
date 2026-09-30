@@ -50,10 +50,32 @@ function app(){
   const document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)},
     createElementNS:element,querySelectorAll(){return []},addEventListener(){}};
   const context=vm.createContext({document,WallModel:M,window:{addEventListener(){},removeEventListener(){}},alert(){}});
-  const script=fs.readFileSync('floorplan_910mm_prototype.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+  const script=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script,context);
   return {run:code=>vm.runInContext(code,context),nodes};
 }
+test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
+  assert.equal(run('selected.height'),200);
+  assert.equal(run('selected.label'),'窓');
+  let g=nodes.get('objects').children[2];
+  assert.equal(g.attrs.transform,'translate(45.5,45.5) rotate(90)');
+  assert.equal(g.children[0].attrs.y,-10);
+  assert.equal(g.children[0].attrs.height,20);
+  assert.equal(g.children[2].attrs.y,-3);
+  assert.equal(g.children[3].attrs.y,0);
+  run('selected=null;addFixture("fixedWindow")');
+  assert.equal(run('selected.height'),140);
+  assert.equal(run('selected.label'),'固定窓');
+  g=nodes.get('objects').children[3];
+  assert.equal(g.children[2].attrs.width,165);
+  assert.equal(g.children[2].attrs.y,-1.5);
+  assert.equal(g.children[3].attrs.d,'M0 0H165');
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures[0].centerline'),true);
+  assert.equal(run('data.fixtures[1].type'),'fixedWindow');
+});
 test('actual SVG renderer: creation, rotation, numeric length, L/T/cross joins and fixture editing',()=>{
   const {run,nodes}=app();
   run('newWall()');
