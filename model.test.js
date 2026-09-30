@@ -54,6 +54,91 @@ function app(){
   vm.runInContext(script,context);
   return {run:code=>vm.runInContext(code,context),nodes};
 }
+test('doors inherit wall geometry, support both hinges and swing sides, and survive JSON round trip',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("door")');
+  assert.equal(run('selected.height'),200);
+  let g=nodes.get('objects').children[2];
+  assert.equal(g.attrs.transform,'translate(45.5,45.5) rotate(90)');
+  assert.equal(g.children[0].attrs.y,-10);
+  assert.equal(g.children[0].attrs.height,20);
+  assert.equal(g.children[2].attrs.d,'M0 0V80');
+  assert.equal(g.children[3].attrs.d,'M80 0A80 80 0 0 1 0 80');
+  for(const [id,value] of Object.entries({pxx:'455',pyy:'455',pww:'800',phh:'200',pang:'90',plabel:'ドア',phanding:'right',pswing:'-1'})){
+    nodes.set(id,{value});
+  }
+  run('applyProps()');g=nodes.get('objects').children[2];
+  assert.equal(g.children[2].attrs.d,'M80 0V-80');
+  assert.equal(g.children[3].attrs.d,'M0 0A80 80 0 0 1 80 -80');
+  run('selected.swingSide=1;render()');
+  assert.equal(nodes.get('objects').children[2].children[3].attrs.d,'M0 0A80 80 0 0 0 80 80');
+  run('selected.handing="left";selected.swingSide=-1;render()');
+  assert.equal(nodes.get('objects').children[2].children[3].attrs.d,'M80 0A80 80 0 0 0 0 -80');
+  run('addFixture("slidingDoor")');
+  g=nodes.get('objects').children[3];
+  assert.equal(g.children[2].attrs.x,80);
+  assert.equal(g.children[2].attrs.width,80);
+  run('addFixture("doubleSlidingDoor")');
+  g=nodes.get('objects').children[4];
+  assert.equal(g.children.length,6);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures[0].swingSide'),-1);
+  assert.equal(run('data.fixtures[0].handing'),'left');
+  assert.equal(run('data.fixtures[1].type'),'slidingDoor');
+  assert.equal(run('data.fixtures[2].type'),'doubleSlidingDoor');
+});
+test('sliding door settings cover both directions and wall sides through rotation and save/load',()=>{
+  const {run,nodes}=app();
+  run('addFixture("slidingDoor")');
+  for(const direction of ['left','right'])for(const side of [-1,1]){
+    for(const [id,value] of Object.entries({pxx:'910',pyy:'910',pww:'800',phh:'140',pang:'0',plabel:'引き戸',pslideDirection:direction,pslideSide:String(side)}))nodes.set(id,{value});
+    run('applyProps()');
+    for(const angle of [0,90,180,270]){
+      if(angle)run('rotateSelected(90)');
+      const g=nodes.get('objects').children[2];
+      assert.equal(g.attrs.transform,`translate(91,91) rotate(${angle})`);
+      assert.equal(g.children[2].attrs.x,direction==='left'?-80:80);
+      assert.equal(g.children[2].attrs.y,side===1?7:-10);
+      assert.ok(g.children[3].attrs.d.startsWith(direction==='left'?'M64 0H16':'M16 0H64'));
+    }
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+    assert.equal(run('selected.slideDirection'),direction);
+    assert.equal(run('selected.slideSide'),side);
+  }
+  run('delete selected.slideDirection;delete selected.slideSide;render()');
+  const legacy=nodes.get('objects').children[2];
+  assert.equal(legacy.children[2].attrs.x,80);
+  assert.equal(legacy.children[2].attrs.y,-10);
+});
+test('folding doors retain equal leaf lengths for all directions, rotations and saved settings',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("foldingDoor")');
+  assert.equal(run('selected.height'),200);
+  assert.equal(run('selected.angle'),90);
+  assert.equal(run('selected.x'),455);
+  assert.equal(run('selected.label'),'折戸');
+  for(const direction of ['left','right'])for(const side of [-1,1]){
+    for(const [id,value] of Object.entries({pxx:'455',pyy:'455',pww:'800',phh:'200',pang:'0',plabel:'折戸',pfoldDirection:direction,pfoldSide:String(side)}))nodes.set(id,{value});
+    run('applyProps()');
+    for(const angle of [0,90,180,270]){
+      if(angle)run('rotateSelected(90)');
+      const g=nodes.get('objects').children[2];
+      assert.equal(g.attrs.transform,`translate(45.5,45.5) rotate(${angle})`);
+      assert.equal(g.children[0].attrs.y,-10);
+      const coords=g.children[2].attrs.d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      const [x0,y0,x1,y1,x2,y2]=coords;
+      near(Math.hypot(x1-x0,y1-y0),40);
+      near(Math.hypot(x2-x1,y2-y1),40);
+      assert.equal(x0,direction==='left'?0:80);
+      assert.equal(Math.sign(y1),side);
+      assert.ok(g.children[4].attrs.d.startsWith(direction==='left'?'M64 0H16':'M16 0H64'));
+    }
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+    assert.equal(run('selected.foldDirection'),direction);
+    assert.equal(run('selected.foldSide'),side);
+    assert.equal(run('selected.centerline'),true);
+  }
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');

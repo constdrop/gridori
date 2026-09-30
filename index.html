@@ -46,6 +46,9 @@
     <button onclick="addFixture('wash')">＋ 洗面台</button>
     <button onclick="addFixture('washer')">＋ 洗濯機</button>
     <button onclick="addFixture('door')">＋ ドア</button>
+    <button onclick="addFixture('slidingDoor')">＋ 引き戸</button>
+    <button onclick="addFixture('foldingDoor')">＋ 折戸</button>
+    <button onclick="addFixture('doubleSlidingDoor')">＋ 引き違い戸</button>
     <button onclick="addFixture('window')">＋ 窓</button>
     <button onclick="addFixture('fixedWindow')">＋ 固定窓</button>
     <button onclick="addFixture('stairs')">＋ 階段</button>
@@ -116,21 +119,67 @@ function newWall(){
 function addFixture(type){
   const defs={
     toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
-    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,100,"ドア"],
+    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
+    slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
+    foldingDoor:[800,140,"折戸"],
     window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"]
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
-  if(isWindow(n)){
+  if(isOpening(n)){
     n.centerline=true;
     if(selected?.type==='wall'){
       n.x=selected.x;n.y=selected.y;n.angle=selected.angle;n.height=selected.thickness;
       n.width=Math.min(n.width,selected.length);
     }
   }
+  if(type==='door'){n.handing='left';n.swingSide=1}
+  if(type==='slidingDoor'){n.slideDirection='right';n.slideSide=-1}
+  if(type==='foldingDoor'){n.foldDirection='left';n.foldSide=1}
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function isDoor(f){return ['door','slidingDoor','doubleSlidingDoor','foldingDoor'].includes(f.type)}
+function isOpening(f){return isWindow(f)||isDoor(f)}
+function drawDoor(g,f){
+  const w=px(f.width),h=px(f.height),leaf=Math.min(3,h/3);
+  function shape(tag,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);
+    g.appendChild(n);return n;
+  }
+  function line(d,extra={}){return shape('path',{d,fill:'none',stroke:'#333','stroke-width':1,...extra})}
+  shape('rect',{x:0,y:-h/2,width:w,height:h,fill:'#fff'});
+  line(`M0 ${-h/2}V${h/2} M${w} ${-h/2}V${h/2}`);
+  if(f.type==='door'){
+    const right=f.handing==='right',hinge=right?w:0,closed=right?0:w,side=f.swingSide===-1?-1:1;
+    // Quarter-circle from the closed leaf tip to its 90-degree open position.
+    line(`M${hinge} 0V${side*w}`,{'stroke-width':2});
+    const sweep=(right?side===-1:side===1)?1:0;
+    line(`M${closed} 0A${w} ${w} 0 0 ${sweep} ${hinge} ${side*w}`,{'stroke-dasharray':'4 2'});
+  }else if(f.type==='foldingDoor'){
+    // Two equal leaves, partly folded toward the stacking jamb.
+    const right=f.foldDirection==='right',sign=right?-1:1,hinge=right?w:0;
+    const joint=hinge+sign*w*.15,tip=hinge+sign*w*.3;
+    const rise=(f.foldSide===-1?-1:1)*Math.sqrt((w/2)**2-(w*.15)**2);
+    line(`M${hinge} 0L${joint} ${rise}L${tip} 0`,{'stroke-width':2,'stroke-linejoin':'round'});
+    shape('circle',{cx:joint,cy:rise,r:1.8,fill:'#fff',stroke:'#333','stroke-width':1});
+    const start=w*(right?.2:.8),end=w*(right?.8:.2),back=end+(right?-1:1)*w*.08;
+    line(`M${start} 0H${end} M${back} ${-w*.06}L${end} 0L${back} ${w*.06}`);
+  }else if(f.type==='slidingDoor'){
+    // Directions are local to the opening and rotate with the whole group.
+    const left=f.slideDirection==='left',sign=left?-1:1;
+    shape('rect',{x:left?-w:w,y:f.slideSide===1?h/2:-h/2-leaf,width:w,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    const start=w*(left?.8:.2),end=w*(left?.2:.8),back=end-sign*w*.08;
+    line(`M${start} 0H${end} M${back} ${-w*.06}L${end} 0L${back} ${w*.06}`);
+  }else{
+    shape('rect',{x:0,y:-leaf,width:w*.53,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    shape('rect',{x:w*.47,y:0,width:w*.53,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    // Opposing arrows distinguish sliding doors from windows.
+    line(`M${w*.12} ${-h/2-5}H${w*.38} l${-w*.05} -3 m${w*.05} 3 l${-w*.05} 3`);
+    line(`M${w*.88} ${h/2+5}H${w*.62} l${w*.05} -3 m${-w*.05} 3 l${w*.05} 3`);
+  }
+}
 function drawWindow(g,f){
   const width=px(f.width),depth=px(f.height),sash=Math.min(3,depth/3);
   function shape(tag,attrs){
@@ -190,13 +239,14 @@ function render(){
   }
   for(const f of data.fixtures){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
-    if(isWindow(f)){
+    if(isOpening(f)){
       // Retain the position of older windows whose origin was the bounding-box corner.
       g.setAttribute('transform',f.centerline?
         `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`:
         `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)}) translate(0,${px(f.height/2)})`);
       g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
-      drawWindow(g,f);objects.appendChild(g);continue;
+      if(isDoor(f))drawDoor(g,f);else drawWindow(g,f);
+      objects.appendChild(g);continue;
     }
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
@@ -269,10 +319,31 @@ function showProps(){
     `:`
       <div class="row">
         <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
-        <div><label>${isWindow(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
+        <div><label>${isOpening(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='door'?`
+        <label>開き勝手（角度0°での吊元）</label>
+        <select id="phanding"><option value="left" ${selected.handing!=='right'?'selected':''}>左開き（左が吊元）</option><option value="right" ${selected.handing==='right'?'selected':''}>右開き（右が吊元）</option></select>
+        <label>開く側（角度0°基準）</label>
+        <select id="pswing"><option value="1" ${selected.swingSide!==-1?'selected':''}>図の下側</option><option value="-1" ${selected.swingSide===-1?'selected':''}>図の上側</option></select>
+      `:''}
+      ${selected.type==='slidingDoor'?`
+        <label>開く方向（角度0°基準）</label>
+        <select id="pslideDirection"><option value="right" ${selected.slideDirection!=='left'?'selected':''}>右へ開く</option><option value="left" ${selected.slideDirection==='left'?'selected':''}>左へ開く</option></select>
+        <label>戸が通る側（角度0°基準）</label>
+        <select id="pslideSide"><option value="-1" ${selected.slideSide!==1?'selected':''}>壁の上側</option><option value="1" ${selected.slideSide===1?'selected':''}>壁の下側</option></select>
+        <p class="hint">方向は戸と一緒に回転します。例：右へ開く・壁の上側を90°回転すると、図では下へ開き、壁の右側を通ります。</p>
+      `:''}
+      ${selected.type==='foldingDoor'?`
+        <label>開く方向（角度0°基準）</label>
+        <select id="pfoldDirection"><option value="left" ${selected.foldDirection!=='right'?'selected':''}>左へ畳んで開く</option><option value="right" ${selected.foldDirection==='right'?'selected':''}>右へ畳んで開く</option></select>
+        <label>折る側（角度0°基準）</label>
+        <select id="pfoldSide"><option value="1" ${selected.foldSide!==-1?'selected':''}>壁の下側</option><option value="-1" ${selected.foldSide===-1?'selected':''}>壁の上側</option></select>
+        <p class="hint">2枚の戸を途中まで折った姿と、畳む方向の矢印を表示します。左右・上下は角度0°基準で、戸と一緒に回転します。</p>
+      `:''}
+      ${isDoor(selected)?'<p class="hint">X/Yは開口の壁芯始点。壁を選んで追加すると位置・角度・壁厚を引き継ぎます。ドアの円弧は90°までの開閉範囲、引き戸の矢印は移動方向です。</p>':''}
       ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
     `}
     <button onclick="applyProps()">値を反映</button>
@@ -296,6 +367,15 @@ function applyProps(){
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
     selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    if(selected.type==='door'){
+      selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
+    }
+    if(selected.type==='slidingDoor'){
+      selected.slideDirection=q('pslideDirection').value;selected.slideSide=Number(q('pslideSide').value);
+    }
+    if(selected.type==='foldingDoor'){
+      selected.foldDirection=q('pfoldDirection').value;selected.foldSide=Number(q('pfoldSide').value);
+    }
   }
   render();
 }
@@ -320,7 +400,7 @@ function fit(){scale=1;svg.style.transform="scale(1)"}
 
 svg.addEventListener("pointerdown",e=>{if(e.button===0){selected=null;render()}});
 document.addEventListener("keydown",e=>{
-  if(["INPUT","TEXTAREA"].includes(document.activeElement.tagName))return;
+  if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
   const k=e.key.toLowerCase();
   if(k==="w")newWall();
   else if(k==="t")addFixture("toilet");
