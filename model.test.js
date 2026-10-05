@@ -260,6 +260,45 @@ test('quarter-turn stairs mirror treads, clip inner corner, rotate, join and rou
   assert.equal(shared.length,1);near(shared[0].x1,70);near(shared[0].x2,840);
   assert.throws(()=>M.stairs({...turn,turnDirection:'invalid'}));
 });
+test('bath is inset on all sides and its tub follows rotation, edits and JSON',()=>{
+  const {run,nodes}=app();run('addFixture("bath")');
+  let g=nodes.get('objects').children[2];
+  assert.equal(g.children[0].attrs.x,7);assert.equal(g.children[0].attrs.y,7);
+  assert.equal(g.children[0].attrs.width,168);assert.equal(g.children[0].attrs.height,168);
+  assert.equal(g.children.length,3);
+  for(const angle of [0,90,180,270]){
+    if(angle)run('rotateSelected(90)');
+    g=nodes.get('objects').children[2];
+    assert.equal(g.attrs.transform,`translate(136.5,136.5) rotate(${angle} 91 91)`);
+    const tub=g.children[1].attrs,dx=tub.x+tub.width/2-91,dy=tub.y+tub.height/2-91;
+    const a=angle*Math.PI/180,tx=dx*Math.cos(a)-dy*Math.sin(a),ty=dx*Math.sin(a)+dy*Math.cos(a);
+    if(angle===0)assert.ok(ty<0);if(angle===90)assert.ok(tx>0);
+    if(angle===180)assert.ok(ty>0);if(angle===270)assert.ok(tx<0);
+  }
+  for(const [id,value] of Object.entries({pxx:'910',pyy:'910',pww:'1820',phh:'1365',pang:'90',plabel:'UB',pbathwall:'200'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.wallThickness'),200);
+  const room=M.bath({width:1820,height:1365,wallThickness:200});
+  assert.equal(room.width,1620);assert.equal(room.height,1165);
+  assert.equal(room.tub.x,room.x);assert.equal(room.tub.y,room.y);
+  assert.equal(room.tub.x+room.tub.width,room.x+room.width);
+  assert.ok(room.tub.y+room.tub.height<room.y+room.height);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.wallThickness'),200);assert.equal(run('selected.angle'),90);
+  nodes.set('pbathwall',{value:'1365'});run('applyProps()');assert.equal(run('selected.wallThickness'),200);
+  assert.throws(()=>M.bath({width:100,height:200,wallThickness:140}));
+  assert.equal(M.bath({width:1820,height:1820}).x,70);
+});
+test('bathrooms render beneath doors regardless of creation or JSON order',()=>{
+  for(const bathFirst of [true,false]){
+    const {run,nodes}=app();
+    run(bathFirst?'addFixture("bath");addFixture("door")':'addFixture("door");addFixture("bath")');
+    const before=run('data.fixtures.map(f=>f.id).join(",")');
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+    assert.equal(nodes.get('objects').children[2].dataset.id,run('data.fixtures.find(f=>f.type==="bath").id'));
+    assert.equal(nodes.get('objects').children[3].dataset.id,run('data.fixtures.find(f=>f.type==="door").id'));
+    assert.equal(run('data.fixtures.map(f=>f.id).join(",")'),before);
+  }
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
