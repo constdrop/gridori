@@ -26,10 +26,11 @@
       {x:Math.round(w.x/455)*455,y:Math.round(w.y/455)*455,target:null};
   }
   function stairs(f){
-    const thickness=f.wallThickness??140,steps=f.steps??12,up=f.upDirection??'up';
+    const thickness=f.wallThickness??140,steps=f.steps??(f.type==='turnStairs'?3:12),up=f.upDirection??'up';
     if(!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height)||
       !Number.isInteger(steps)||steps<1||steps>1000||!['up','down'].includes(up))throw Error('Invalid stairs');
-    const connections=f.connections??(f.type==='stairs'?['top','bottom']:[]);
+    if(f.type==='turnStairs'&&!['left','right'].includes(f.turnDirection??'right'))throw Error('Invalid turn');
+    const connections=f.type==='turnStairs'?['bottom',(f.turnDirection??'right')]:f.connections??(f.type==='stairs'?['top','bottom']:[]);
     if(!Array.isArray(connections)||connections.some(e=>!['top','bottom','left','right'].includes(e)))throw Error('Invalid connections');
     const inset=e=>connections.includes(e)?0:thickness/2;
     const width=f.width-inset('left')-inset('right'),height=f.height-inset('top')-inset('bottom');
@@ -42,13 +43,17 @@
   function stairEndLines(fixtures){
     const groups=new Map(),epsilon=1e-6;
     for(const f of fixtures){
-      if(f.type!=='stairs')continue;
+      if(!['stairs','turnStairs'].includes(f.type))continue;
       const s=stairs(f),a=(f.angle??0)*Math.PI/180,c=Math.cos(a),sn=Math.sin(a);
       const transform=(x,y)=>({x:f.x+f.width/2+(x-f.width/2)*c-(y-f.height/2)*sn,y:f.y+f.height/2+(x-f.width/2)*sn+(y-f.height/2)*c});
-      for(const edge of ['top','bottom']){
+      for(const edge of (f.type==='turnStairs'?s.connections:['top','bottom'])){
         if(!s.connections.includes(edge))continue;
         const top=edge==='top',y=s.y+(top?0:s.height);
-        const p=transform(s.x+s.notches[top?'tl':'bl'],y),q=transform(s.x+s.width-s.notches[top?'tr':'br'],y);
+        let p=transform(s.x+s.notches[top?'tl':'bl'],y),q=transform(s.x+s.width-s.notches[top?'tr':'br'],y);
+        if(edge==='left'||edge==='right'){
+          const left=edge==='left',x=s.x+(left?0:s.width);
+          p=transform(x,s.y+s.notches[left?'tl':'tr']);q=transform(x,s.y+s.height-s.notches[left?'bl':'br']);
+        }
         const length=Math.hypot(q.x-p.x,q.y-p.y);if(length<epsilon)continue;
         let ux=(q.x-p.x)/length,uy=(q.y-p.y)/length;
         if(ux<-epsilon||(Math.abs(ux)<epsilon&&uy<0)){ux=-ux;uy=-uy}
@@ -87,7 +92,7 @@
     }),fixtures:fixtures.map(f=>{
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
-      if(o.type==='stairs'||o.type==='landing')stairs(o);
+      if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
       return o;
     })};
   }

@@ -52,6 +52,7 @@
     <button onclick="addFixture('window')">＋ 窓</button>
     <button onclick="addFixture('fixedWindow')">＋ 固定窓</button>
     <button onclick="addFixture('stairs')">＋ 階段</button>
+    <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
     <h3>図面</h3>
     <button onclick="zoom(1.2)">＋ 拡大</button>
@@ -122,7 +123,7 @@ function addFixture(type){
     toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
     wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
-    foldingDoor:[800,140,"折戸"],
+    foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
     window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"], landing:[910,910,"踊り場"]
   };
   const d=defs[type]||[910,910,type];
@@ -138,6 +139,7 @@ function addFixture(type){
   if(type==='slidingDoor'){n.slideDirection='right';n.slideSide=-1}
   if(type==='foldingDoor'){n.foldDirection='left';n.foldSide=1}
   if(type==='stairs'){n.wallThickness=selected?.type==='wall'?selected.thickness:140;n.steps=12;n.upDirection='up';if(n.wallThickness>=Math.min(n.width,n.height))n.wallThickness=140}
+  if(type==='turnStairs'){n.wallThickness=selected?.wallThickness??(selected?.type==='wall'?selected.thickness:140);if(n.wallThickness>=910)n.wallThickness=140;n.steps=3;n.turnDirection='right';n.upDirection='up'}
   if(type==='landing'){n.wallThickness=selected?.wallThickness??(selected?.type==='wall'?selected.thickness:140);if(n.wallThickness>=910)n.wallThickness=140;n.connections=[]}
   data.fixtures.push(n);selected=n;render();
 }
@@ -161,6 +163,18 @@ function drawStairs(g,f){
     shape('path',{d:[...Object.entries(edges).filter(([edge])=>!s.connections.includes(edge)).map(([,d])=>d),...cutEdges].join(' '),fill:'none',stroke:'#333','stroke-width':1});
   }
   if(f.type==='landing')return;
+  if(f.type==='turnStairs'){
+    const left=f.turnDirection==='left',cx=left?x:x+w,cy=y+h,sign=left?1:-1,n=left?bl:br;
+    for(let i=1;i<s.steps;i++){
+      const a=Math.PI/2*i/s.steps,cos=Math.cos(a),sin=Math.sin(a);
+      const outer=Math.min(w/cos,h/sin),inner=Math.min(n/cos,n/sin);
+      shape('line',{x1:cx+sign*inner*cos,y1:cy-inner*sin,x2:cx+sign*outer*cos,y2:cy-outer*sin,stroke:'#666','stroke-width':.8});
+    }
+    const rx=w*.55,ry=h*.55,tipX=cx,tipY=cy-ry,size=Math.min(w,h)*.08;
+    const d=`M${cx+sign*rx} ${cy}A${rx} ${ry} 0 0 ${left?0:1} ${tipX} ${tipY} M${tipX+sign*size} ${tipY-size}L${tipX} ${tipY}L${tipX+sign*size} ${tipY+size}`;
+    shape('path',{d,fill:'none',stroke:'#fff','stroke-width':5});
+    shape('path',{d,fill:'none',stroke:'#222','stroke-width':1.8});return;
+  }
   for(let i=1;i<s.steps;i++){
     const at=y+h*i/s.steps;
     const left=Math.max(at<=y+tl?tl:0,at>=y+h-bl?bl:0),right=Math.max(at<=y+tr?tr:0,at>=y+h-br?br:0);
@@ -285,7 +299,7 @@ function render(){
     }
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
-    if(f.type==='stairs'||f.type==='landing'){drawStairs(g,f);objects.appendChild(g);continue}
+    if(['stairs','landing','turnStairs'].includes(f.type)){drawStairs(g,f);objects.appendChild(g);continue}
     const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
     r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
     r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
@@ -365,6 +379,12 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='turnStairs'?`
+        <label>周囲の壁厚 (mm)</label><input id="pstwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <label>段数</label><input id="psteps" type="number" min="1" max="1000" step="1" value="${selected.steps??3}">
+        <label>上りの曲がり方向（角度0°基準）</label><select id="pturn"><option value="right" ${selected.turnDirection!=='left'?'selected':''}>下から入り、右へ上る</option><option value="left" ${selected.turnDirection==='left'?'selected':''}>下から入り、左へ上る</option></select>
+        <p class="hint">入口と出口はグリッドまで伸び、内角は壁厚の半分を切り欠きます。直線階段の接続辺と座標を合わせて配置してください。回転で入口・出口の向きも変わります。</p>
+      `:''}
       ${['stairs','landing'].includes(selected.type)?`
         <label>周囲の壁厚 (mm)</label><input id="pstwall" type="number" min="0" value="${selected.wallThickness??140}">
         <label>接続辺（角度0°基準）</label>
@@ -412,12 +432,14 @@ function applyProps(){
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
   }
-  if(['stairs','landing'].includes(selected.type)){
+  if(['stairs','landing','turnStairs'].includes(selected.type)){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pstwall').value,connections:['top','bottom','left','right'].filter(edge=>q('pconnect-'+edge)?.checked)};
     if(selected.type==='stairs'){next.steps=+q('psteps').value;next.upDirection=q('pup').value}
+    if(selected.type==='turnStairs'){next.steps=+q('psteps').value;next.turnDirection=q('pturn').value}
     try{WallModel.stairs(next)}catch{alert('壁厚は0以上かつ幅・高さ未満、段数は1〜1000の整数で入力してください。');return}
     selected.wallThickness=next.wallThickness;selected.steps=next.steps;selected.upDirection=next.upDirection;
     selected.connections=next.connections;
+    if(selected.type==='turnStairs')selected.turnDirection=next.turnDirection;
   }
   selected.x=+q("pxx").value;selected.y=+q("pyy").value;
   if(selected.type==="wall"){
