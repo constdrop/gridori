@@ -139,19 +139,22 @@ test('folding doors retain equal leaf lengths for all directions, rotations and 
     assert.equal(run('selected.centerline'),true);
   }
 });
-test('stairs inset all edges, draw exact tread count and preserve direction through editing and import',()=>{
+test('stairs reach grid at both ends, draw exact tread count and preserve direction through editing and import',()=>{
   const {run,nodes}=app();
   run('addFixture("stairs")');
   let g=nodes.get('objects').children[2];
   assert.equal(g.children[0].attrs.x,7);
-  assert.equal(g.children[0].attrs.y,7);
+  assert.equal(g.children[0].attrs.y,0);
   assert.equal(g.children[0].attrs.width,77);
-  assert.equal(g.children[0].attrs.height,259);
-  assert.equal(g.children.length,15); // outline + 12 lines + two arrow strokes, no text
+  assert.equal(g.children[0].attrs.height,273);
+  assert.equal(g.children.length,15); // fill + side edges + 11 internal lines + arrow strokes
+  assert.equal(g.children[1].attrs.d,'M7 0V273 M84 0V273');
+  const closed=M.stairs({type:'stairs',width:910,height:2730,connections:[]});
+  assert.equal(closed.y,70);assert.equal(closed.height,2590);
   const arrow=g.children.at(-1).attrs.d;
   for(const [id,value] of Object.entries({pxx:'1365',pyy:'1365',pww:'910',phh:'2730',pang:'90',plabel:'階段',pstwall:'200',psteps:'16',pup:'down'}))nodes.set(id,{value});
   run('applyProps()');g=nodes.get('objects').children[2];
-  assert.equal(g.children.length,19);
+  assert.equal(g.children.length,18);
   assert.equal(g.children[0].attrs.x,10);
   assert.equal(g.children[0].attrs.width,71);
   assert.ok(g.attrs.transform.includes('rotate(90'));
@@ -166,6 +169,64 @@ test('stairs inset all edges, draw exact tread count and preserve direction thro
   assert.throws(()=>M.stairs({width:910,height:2730,wallThickness:910}));
   assert.throws(()=>M.stairs({width:910,height:2730,steps:0}));
   assert.equal(M.stairs({width:910,height:2730}).steps,12);
+});
+test('landing connects without inset gaps or edge strokes and survives rotation and import',()=>{
+  const {run,nodes}=app();
+  run('addFixture("landing")');
+  let g=nodes.get('objects').children[2];
+  assert.equal(g.children.length,1);
+  assert.equal(g.children[0].attrs.width,77);
+  for(const [id,value] of Object.entries({pxx:'910',pyy:'910',pww:'910',phh:'910',pang:'90',plabel:'踊り場',pstwall:'140'}))nodes.set(id,{value});
+  nodes.set('pconnect-top',{checked:true});nodes.set('pconnect-right',{checked:true});
+  run('applyProps()');g=nodes.get('objects').children[2];
+  assert.ok(g.children[0].attrs.d.includes('L84 0 L84 7 L91 7'));
+  assert.equal(g.children[0].attrs.stroke,'none');
+  assert.equal(g.children[1].attrs.d,'M7 84H91 M7 0V84 M84 0 L84 7 L91 7');
+  assert.ok(g.attrs.transform.includes('rotate(90'));
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures[0].connections.join(",")'),'top,right');
+  const flight=M.stairs({width:910,height:2730,connections:['bottom']});
+  const landing=M.stairs({width:910,height:910,connections:['top']});
+  near(flight.y+flight.height,2730+landing.y);
+  near(flight.x,landing.x);near(flight.width,landing.width);
+  assert.throws(()=>M.stairs({width:910,height:910,connections:['invalid']}));
+});
+test('adjacent connections notch only their shared corners; opposite edges remain uncut',()=>{
+  const base={width:910,height:910,wallThickness:140};
+  for(const [corner,connections] of Object.entries({tl:['top','left'],tr:['top','right'],br:['bottom','right'],bl:['bottom','left']})){
+    const s=M.stairs({...base,connections});
+    assert.equal(s.notches[corner],70);
+    assert.equal(Object.values(s.notches).filter(n=>n>0).length,1);
+  }
+  for(const connections of [[],['top'],['top','bottom'],['left','right']]){
+    assert.ok(Object.values(M.stairs({...base,connections}).notches).every(n=>n===0));
+  }
+  assert.ok(Object.values(M.stairs({...base,connections:['top','bottom','left','right']}).notches).every(n=>n===70));
+  const {run,nodes}=app();
+  run('addFixture("stairs");selected.connections=["top","left"];selected.steps=48;render()');
+  const g=nodes.get('objects').children[2];
+  assert.equal(g.children[2].attrs.x1,7); // first tread is trimmed clear of the notch
+  assert.equal(g.children[2].attrs.x2,84);
+});
+test('end treads merge shared and partial spans, retain gaps and rotate with stairs',()=>{
+  const f={type:'stairs',x:0,y:0,width:910,height:2730,angle:0};
+  const lines=M.stairEndLines([f,{...f,y:2730}]);
+  assert.equal(lines.length,3);
+  assert.equal(lines.filter(l=>l.y1===2730).length,1);
+  const partial=M.stairEndLines([{...f,connections:['top']},{...f,x:455,connections:['top']}]);
+  assert.equal(partial.length,1);near(partial[0].x1,70);near(partial[0].x2,1295);
+  assert.equal(M.stairEndLines([{...f,connections:['top']},{...f,x:1820,connections:['top']}]).length,2);
+  const rotated=M.stairEndLines([{...f,angle:90},{...f,angle:90,x:-2730}]);
+  assert.equal(rotated.length,3);
+  for(const line of rotated)near(line.x1,line.x2);
+  assert.equal(M.stairEndLines([f,{...f,type:'landing',y:2730}]).length,2);
+  const cut=M.stairEndLines([{...f,connections:['top','left']}]);
+  near(cut[0].x1,70);near(cut[0].x2,840);
+  const {run,nodes}=app();run('addFixture("stairs")');
+  const ends=nodes.get('objects').children.slice(-2);
+  assert.equal(ends[0].attrs.y1,136.5);
+  assert.equal(ends[1].attrs.y1,409.5);
+  assert.equal(ends[0].style.pointerEvents,'none');
 });
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
