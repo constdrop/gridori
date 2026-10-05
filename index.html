@@ -128,6 +128,10 @@ function addFixture(type){
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(type==='bath'){
+    n.wallThickness=selected?.type==='wall'?selected.thickness:140;
+    if(n.wallThickness>=Math.min(n.width,n.height)){alert('浴室の寸法より壁厚が大きいため追加できません。');return}
+  }
   if(isOpening(n)){
     n.centerline=true;
     if(selected?.type==='wall'){
@@ -144,6 +148,20 @@ function addFixture(type){
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function drawBath(g,f){
+  const room=WallModel.bath(f),tub=room.tub;
+  function rect(box,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    for(const key of ['x','y','width','height'])n.setAttribute(key,px(box[key]));
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,value);
+    g.appendChild(n);
+  }
+  rect(room,{fill:'#fff',stroke:'#333','stroke-width':1});
+  rect(tub,{fill:'#fff',stroke:'#333','stroke-width':1.2});
+  const rim=Math.min(tub.width,tub.height)*.08;
+  rect({x:tub.x+rim,y:tub.y+rim,width:tub.width-2*rim,height:tub.height-2*rim},
+    {fill:'#eef6fa',stroke:'#555','stroke-width':.8,rx:px(Math.min(tub.width,tub.height)*.18)});
+}
 function drawStairs(g,f){
   const s=WallModel.stairs(f),x=px(s.x),y=px(s.y),w=px(s.width),h=px(s.height);
   function shape(tag,attrs){
@@ -286,7 +304,9 @@ function render(){
     }
     objects.appendChild(g);
   }
-  for(const f of data.fixtures){
+  // Draw bathroom floors before doors and other fixtures, independent of creation order.
+  const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
+  for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
     if(isOpening(f)){
       // Retain the position of older windows whose origin was the bounding-box corner.
@@ -300,6 +320,7 @@ function render(){
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
     if(['stairs','landing','turnStairs'].includes(f.type)){drawStairs(g,f);objects.appendChild(g);continue}
+    if(f.type==='bath'){drawBath(g,f);objects.appendChild(g);continue}
     const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
     r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
     r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
@@ -379,6 +400,11 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='bath'?`
+        <label>周囲の壁厚 (mm)</label><input id="pbathwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">幅・高さは壁芯間寸法です。四辺を壁厚の半分ずつ内側へ寄せます。バスタブは0°で上、90°で右、180°で下、270°で左になります。浴室全体が回転します。</p>
+      `:''}
       ${selected.type==='turnStairs'?`
         <label>周囲の壁厚 (mm)</label><input id="pstwall" type="number" min="0" value="${selected.wallThickness??140}">
         <label>段数</label><input id="psteps" type="number" min="1" max="1000" step="1" value="${selected.steps??3}">
@@ -431,6 +457,11 @@ function applyProps(){
   if(inputs.some(i=>i.value.trim()===''||!Number.isFinite(Number(i.value))) ||
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
+  }
+  if(selected.type==='bath'){
+    const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pbathwall').value};
+    try{WallModel.bath(next)}catch{alert('壁厚は0以上かつ浴室の幅・高さ未満で入力してください。');return}
+    selected.wallThickness=next.wallThickness;
   }
   if(['stairs','landing','turnStairs'].includes(selected.type)){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pstwall').value,connections:['top','bottom','left','right'].filter(edge=>q('pconnect-'+edge)?.checked)};

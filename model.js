@@ -72,6 +72,12 @@
     }
     return result;
   }
+  function bath(f){
+    const thickness=f.wallThickness??140;
+    if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
+    const x=thickness/2,y=thickness/2,width=f.width-thickness,height=f.height-thickness;
+    return {x,y,width,height,tub:{x,y,width,height:height*.45}};
+  }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
     const walls=input.walls??input.objects?.filter(o=>o.type==='wall');
@@ -93,10 +99,11 @@
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
+      if(o.type==='bath')bath(o);
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
