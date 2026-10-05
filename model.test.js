@@ -160,7 +160,10 @@ test('stairs reach grid at both ends, draw exact tread count and preserve direct
   assert.ok(g.attrs.transform.includes('rotate(90'));
   assert.notEqual(g.children.at(-1).attrs.d,arrow);
   const coords=g.children.at(-1).attrs.d.match(/-?\d+(?:\.\d+)?/g).map(Number);
-  assert.ok(coords[2]>coords[1]); // down arrow ends below its start
+  // The shaft uses M x y V y: V supplies only the end Y, not an X/Y pair.
+  const [,startY,endY]=coords;
+  // SVG Y increases downward; check local direction before the group rotation.
+  assert.ok(endY>startY, 'Down arrow must end below its start in local coordinates');
   run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
   assert.equal(run('selected.steps'),16);
   assert.equal(run('selected.wallThickness'),200);
