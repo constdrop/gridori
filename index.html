@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>910mm間取りプロトタイプ</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#222;background:#eee}
+  header{height:48px;background:#222;color:#fff;display:flex;align-items:center;padding:0 14px;gap:18px}
+  header strong{font-size:15px}
+  header span{font-size:12px;color:#bbb}
+  main{display:grid;grid-template-columns:210px 1fr 280px;height:calc(100vh - 48px)}
+  aside{background:#fafafa;border-right:1px solid #ccc;padding:12px;overflow:auto}
+  .right{border-left:1px solid #ccc;border-right:0}
+  h3{font-size:13px;margin:8px 0}
+  button{width:100%;padding:8px;margin:3px 0;border:1px solid #bbb;background:#fff;border-radius:4px;text-align:left;cursor:pointer}
+  button:hover{background:#eee}
+  .hint{font-size:11px;color:#666;line-height:1.5;margin:8px 0}
+  .canvas{position:relative;overflow:auto;background:#ddd}
+  svg{display:block;background:#fff;margin:30px;box-shadow:0 1px 5px #999}
+  label{display:block;font-size:12px;margin-top:9px;color:#555}
+  input,select{width:100%;padding:6px;border:1px solid #aaa;border-radius:3px;background:#fff}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .status{position:absolute;left:12px;bottom:10px;background:#fff;padding:5px 8px;border:1px solid #bbb;border-radius:3px;font-size:11px}
+  .selected{outline:2px solid #1976d2}
+  #objects [data-id]{cursor:grab;touch-action:none}
+  #objects [data-id]:active{cursor:grabbing}
+  .legend{font-size:11px;line-height:1.6}
+  .kbd{font-family:monospace;background:#eee;border:1px solid #ccc;border-radius:3px;padding:1px 4px}
+  .empty{color:#777;font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <strong>910mm 間取り CAD — Prototype</strong>
+  <span>壁を主役にした2D図面エディタ</span>
+</header>
+<main>
+  <aside>
+    <h3>部品</h3>
+    <button onclick="newWall()">＋ 壁</button>
+    <button onclick="addFixture('toilet')">＋ トイレ</button>
+    <button onclick="addFixture('bath')">＋ ユニットバス</button>
+    <button onclick="addFixture('kitchen')">＋ キッチン</button>
+    <button onclick="addFixture('wash')">＋ 洗面台</button>
+    <button onclick="addFixture('washer')">＋ 洗濯機</button>
+    <button onclick="addFixture('door')">＋ ドア</button>
+    <button onclick="addFixture('slidingDoor')">＋ 引き戸</button>
+    <button onclick="addFixture('foldingDoor')">＋ 折戸</button>
+    <button onclick="addFixture('doubleSlidingDoor')">＋ 引き違い戸</button>
+    <button onclick="addFixture('window')">＋ 窓</button>
+    <button onclick="addFixture('fixedWindow')">＋ 固定窓</button>
+    <button onclick="addFixture('stairs')">＋ 階段</button>
+    <h3>図面</h3>
+    <button onclick="zoom(1.2)">＋ 拡大</button>
+    <button onclick="zoom(.833333)">－ 縮小</button>
+    <button onclick="fit()">図面を中央へ</button>
+    <button onclick="saveJSON()">JSON保存</button>
+    <button onclick="loadJSON()">JSON読込</button>
+    <button onclick="window.print()">印刷 / PDF</button>
+    <p class="hint">
+      数値入力中心。移動だけドラッグできます。<br>
+      内部座標はmm。丸印は壁芯端点です。<br>
+      壁は455mmグリッドへ吸着。端点を他の壁の端点・途中へ近づけると接続します（182mm以内）。
+    </p>
+    <div class="legend">
+      <b>ショートカット</b><br>
+      <span class="kbd">W</span> 壁追加<br>
+      <span class="kbd">T</span> トイレ<br>
+      <span class="kbd">B</span> 浴室<br>
+      <span class="kbd">K</span> キッチン<br>
+      <span class="kbd">D</span> ドア<br>      <span class="kbd">R</span> 壁を90°回転<br>
+      <span class="kbd">F2</span> 選択部品を編集<br>
+      <span class="kbd">Delete</span> 削除<br>
+      <span class="kbd">矢印</span> 移動（91mm単位）
+    </div>
+  </aside>
+
+  <section class="canvas" id="canvas">
+    <svg id="svg" width="1200" height="850" viewBox="0 0 1200 850"
+         xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid455" width="45.5" height="45.5" patternUnits="userSpaceOnUse">
+          <path d="M45.5 0H0V45.5" fill="none" stroke="#e4e4e4"/>
+        </pattern>
+        <pattern id="grid910" width="91" height="91" patternUnits="userSpaceOnUse">
+          <rect width="91" height="91" fill="url(#grid455)"/>
+          <path d="M91 0H0V91" fill="none" stroke="#ccc"/>
+        </pattern>
+      </defs>
+      <rect width="1200" height="850" fill="url(#grid910)"/>
+      <g id="objects"></g>
+    </svg>
+    <div class="status" id="status">910mmグリッド / 選択なし</div>
+  </section>
+
+  <aside class="right">
+    <h3>選択中の部品</h3>
+    <div id="properties" class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>
+  </aside>
+</main>
+
+<script src="model.js"></script>
+<script>
+const svg=document.getElementById('svg'), objects=document.getElementById('objects');
+let data={version:3,units:"mm",grid:{major:910,minor:455},walls:[],fixtures:[]};
+let selected=null, scale=1; // 1mm = .1px-ish visually; SVG viewBox stays simple
+let uid=1;
+
+function px(mm){return mm*0.1}
+function mm(pxv){return pxv/0.1}
+function nextId(prefix){while(all().some(o=>o.id===prefix+uid))uid++;return prefix+uid++}
+
+function newWall(){
+  const n={id:nextId("w"),type:"wall",x:910,y:910,length:2730,angle:0,thickness:140};
+  data.walls.push(n); selected=n; render();
+}
+function addFixture(type){
+  const defs={
+    toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
+    slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
+    foldingDoor:[800,140,"折戸"],
+    window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"]
+  };
+  const d=defs[type]||[910,910,type];
+  const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(isOpening(n)){
+    n.centerline=true;
+    if(selected?.type==='wall'){
+      n.x=selected.x;n.y=selected.y;n.angle=selected.angle;n.height=selected.thickness;
+      n.width=Math.min(n.width,selected.length);
+    }
+  }
+  if(type==='door'){n.handing='left';n.swingSide=1}
+  if(type==='slidingDoor'){n.slideDirection='right';n.slideSide=-1}
+  if(type==='foldingDoor'){n.foldDirection='left';n.foldSide=1}
+  data.fixtures.push(n);selected=n;render();
+}
+function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function isDoor(f){return ['door','slidingDoor','doubleSlidingDoor','foldingDoor'].includes(f.type)}
+function isOpening(f){return isWindow(f)||isDoor(f)}
+function drawDoor(g,f){
+  const w=px(f.width),h=px(f.height),leaf=Math.min(3,h/3);
+  function shape(tag,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);
+    g.appendChild(n);return n;
+  }
+  function line(d,extra={}){return shape('path',{d,fill:'none',stroke:'#333','stroke-width':1,...extra})}
+  shape('rect',{x:0,y:-h/2,width:w,height:h,fill:'#fff'});
+  line(`M0 ${-h/2}V${h/2} M${w} ${-h/2}V${h/2}`);
+  if(f.type==='door'){
+    const right=f.handing==='right',hinge=right?w:0,closed=right?0:w,side=f.swingSide===-1?-1:1;
+    // Quarter-circle from the closed leaf tip to its 90-degree open position.
+    line(`M${hinge} 0V${side*w}`,{'stroke-width':2});
+    const sweep=(right?side===-1:side===1)?1:0;
+    line(`M${closed} 0A${w} ${w} 0 0 ${sweep} ${hinge} ${side*w}`,{'stroke-dasharray':'4 2'});
+  }else if(f.type==='foldingDoor'){
+    // Two equal leaves, partly folded toward the stacking jamb.
+    const right=f.foldDirection==='right',sign=right?-1:1,hinge=right?w:0;
+    const joint=hinge+sign*w*.15,tip=hinge+sign*w*.3;
+    const rise=(f.foldSide===-1?-1:1)*Math.sqrt((w/2)**2-(w*.15)**2);
+    line(`M${hinge} 0L${joint} ${rise}L${tip} 0`,{'stroke-width':2,'stroke-linejoin':'round'});
+    shape('circle',{cx:joint,cy:rise,r:1.8,fill:'#fff',stroke:'#333','stroke-width':1});
+    const start=w*(right?.2:.8),end=w*(right?.8:.2),back=end+(right?-1:1)*w*.08;
+    line(`M${start} 0H${end} M${back} ${-w*.06}L${end} 0L${back} ${w*.06}`);
+  }else if(f.type==='slidingDoor'){
+    // Directions are local to the opening and rotate with the whole group.
+    const left=f.slideDirection==='left',sign=left?-1:1;
+    shape('rect',{x:left?-w:w,y:f.slideSide===1?h/2:-h/2-leaf,width:w,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    const start=w*(left?.8:.2),end=w*(left?.2:.8),back=end-sign*w*.08;
+    line(`M${start} 0H${end} M${back} ${-w*.06}L${end} 0L${back} ${w*.06}`);
+  }else{
+    shape('rect',{x:0,y:-leaf,width:w*.53,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    shape('rect',{x:w*.47,y:0,width:w*.53,height:leaf,fill:'#fff',stroke:'#333','stroke-width':1});
+    // Opposing arrows distinguish sliding doors from windows.
+    line(`M${w*.12} ${-h/2-5}H${w*.38} l${-w*.05} -3 m${w*.05} 3 l${-w*.05} 3`);
+    line(`M${w*.88} ${h/2+5}H${w*.62} l${w*.05} -3 m${-w*.05} 3 l${w*.05} 3`);
+  }
+}
+function drawWindow(g,f){
+  const width=px(f.width),depth=px(f.height),sash=Math.min(3,depth/3);
+  function shape(tag,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,value);
+    g.appendChild(n);return n;
+  }
+  // The white opening masks the wall across its full thickness.
+  shape('rect',{x:0,y:-depth/2,width,height:depth,fill:'#fff'});
+  shape('path',{d:`M0 ${-depth/2}V${depth/2} M${width} ${-depth/2}V${depth/2}`,stroke:'#333','stroke-width':1,fill:'none'});
+  if(f.type==='window'){
+    // Two overlapping leaves on either side of the wall centerline.
+    shape('rect',{x:0,y:-sash,width:width*.53,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+    shape('rect',{x:width*.47,y:0,width:width*.53,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+  }else{
+    shape('rect',{x:0,y:-sash/2,width,height:sash,fill:'#eef6fa',stroke:'#333','stroke-width':.8});
+    shape('path',{d:`M0 0H${width}`,stroke:'#333','stroke-width':.6});
+  }
+}
+function all(){return [...data.walls,...data.fixtures]}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+function render(){
+  objects.innerHTML="";
+  for(const w of data.walls){
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    const shape=WallModel.body(w), half=px(w.thickness)/2;
+    const cx=px(w.x), cy=px(w.y);
+
+    g.setAttribute("transform",`translate(${cx},${cy}) rotate(${w.angle||0})`);
+    g.dataset.id=w.id;
+    g.addEventListener("pointerdown", e=>startDrag(e,w));
+
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",px(shape.x));
+    r.setAttribute("y",px(shape.y));
+    r.setAttribute("width",px(shape.width));
+    r.setAttribute("height",px(shape.height));
+    r.setAttribute("fill","#444");
+    g.appendChild(r);
+
+    // Show the nominal wall length and the actual drawn length separately.
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x",px(w.length/2));
+    t.setAttribute("y",-half-8);
+    t.setAttribute("text-anchor","middle");
+    t.setAttribute("font-size","11");
+    t.textContent=`設定長 ${w.length} mm / 表示長 ${w.length+w.thickness} mm`;
+    g.appendChild(t);
+
+    for(const x of [0,w.length]){
+      const dot=document.createElementNS("http://www.w3.org/2000/svg","circle");
+      dot.setAttribute("cx",px(x));dot.setAttribute("cy",0);dot.setAttribute("r",3);
+      dot.setAttribute("fill",selected===w?"#1976d2":"#fff");g.appendChild(dot);
+    }
+    objects.appendChild(g);
+  }
+  for(const f of data.fixtures){
+    const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(isOpening(f)){
+      // Retain the position of older windows whose origin was the bounding-box corner.
+      g.setAttribute('transform',f.centerline?
+        `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`:
+        `translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)}) translate(0,${px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      if(isDoor(f))drawDoor(g,f);else drawWindow(g,f);
+      objects.appendChild(g);continue;
+    }
+    g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
+    g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
+    r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
+    g.appendChild(r);
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x",px(f.width/2));t.setAttribute("y",px(f.height/2)+4);
+    t.setAttribute("text-anchor","middle");t.setAttribute("font-size","11");t.textContent=f.label;
+    g.appendChild(t);objects.appendChild(g);
+  }
+  if(snapTarget){
+    const marker=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    marker.setAttribute("cx",px(snapTarget.x));marker.setAttribute("cy",px(snapTarget.y));
+    marker.setAttribute("r",6);marker.setAttribute("fill","none");marker.setAttribute("stroke","#e07800");
+    marker.setAttribute("stroke-width",2);marker.style.pointerEvents="none";objects.appendChild(marker);
+  }
+  updateSelection();
+}
+let dragState=null, snapTarget=null;
+function svgPoint(e){ const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse()); return {x:mm(p.x),y:mm(p.y)}; }
+function startDrag(e,o){
+  if(e.button!==0)return;
+  e.preventDefault();e.stopPropagation();select(o);
+  const p=svgPoint(e);dragState={obj:o,startX:p.x,startY:p.y,origX:o.x,origY:o.y};
+  window.addEventListener("pointermove",dragMove);window.addEventListener("pointerup",dragEnd);
+  window.addEventListener("pointercancel",dragEnd);
+}
+function dragMove(e){
+  if(!dragState)return;
+  const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
+  const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    {x:Math.round(x/91)*91,y:Math.round(y/91)*91};
+  d.obj.x=position.x;d.obj.y=position.y;snapTarget=position.target;render();
+}
+function dragEnd(){
+  window.removeEventListener("pointermove",dragMove);window.removeEventListener("pointerup",dragEnd);
+  window.removeEventListener("pointercancel",dragEnd);dragState=null;snapTarget=null;render();
+}
+function select(o){selected=o;render();showProps()}
+function updateSelection(){
+  document.querySelectorAll('#objects [data-id]').forEach(e=>{
+    if(selected && e.dataset.id===selected.id)e.classList.add('selected'); else e.classList.remove('selected');
+  });
+  document.getElementById('status').textContent=selected?
+    `${selected.type} / x=${selected.x} y=${selected.y} / ${selected.type==='wall'?`設定長 ${selected.length} / 表示長 ${selected.length+selected.thickness}`:`${selected.width}×${selected.height}`} mm`:
+    "910mmグリッド / 選択なし";
+  showProps();
+}
+function showProps(){
+  const p=document.getElementById('properties');
+  if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
+  const isWall=selected.type==="wall";
+  p.innerHTML=`
+    <label>種類</label><input value="${esc(selected.type)}" disabled>
+    <div class="row">
+      <div><label>X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
+      <div><label>Y (mm)</label><input id="pyy" type="number" value="${selected.y}"></div>
+    </div>
+    ${isWall?`
+      <label>設定長・壁芯間 (mm)</label><input id="plen" type="number" value="${selected.length}">
+      <div class="row">
+        <div><label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}" step="1"></div>
+        <div><label>壁厚 (mm)</label><input id="pth" type="number" value="${selected.thickness}"></div>
+      </div>
+      <div class="row"><button onclick="changeWallLength(-455)">−455mm</button><button onclick="changeWallLength(455)">＋455mm</button></div>
+      <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+      <p class="hint">0°＝右方向、90°＝下方向。壁は始点＋長さ＋角度＋厚さで管理します。</p>
+    `:`
+      <div class="row">
+        <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
+        <div><label>${isOpening(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
+      </div>
+      <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='door'?`
+        <label>開き勝手（角度0°での吊元）</label>
+        <select id="phanding"><option value="left" ${selected.handing!=='right'?'selected':''}>左開き（左が吊元）</option><option value="right" ${selected.handing==='right'?'selected':''}>右開き（右が吊元）</option></select>
+        <label>開く側（角度0°基準）</label>
+        <select id="pswing"><option value="1" ${selected.swingSide!==-1?'selected':''}>図の下側</option><option value="-1" ${selected.swingSide===-1?'selected':''}>図の上側</option></select>
+      `:''}
+      ${selected.type==='slidingDoor'?`
+        <label>開く方向（角度0°基準）</label>
+        <select id="pslideDirection"><option value="right" ${selected.slideDirection!=='left'?'selected':''}>右へ開く</option><option value="left" ${selected.slideDirection==='left'?'selected':''}>左へ開く</option></select>
+        <label>戸が通る側（角度0°基準）</label>
+        <select id="pslideSide"><option value="-1" ${selected.slideSide!==1?'selected':''}>壁の上側</option><option value="1" ${selected.slideSide===1?'selected':''}>壁の下側</option></select>
+        <p class="hint">方向は戸と一緒に回転します。例：右へ開く・壁の上側を90°回転すると、図では下へ開き、壁の右側を通ります。</p>
+      `:''}
+      ${selected.type==='foldingDoor'?`
+        <label>開く方向（角度0°基準）</label>
+        <select id="pfoldDirection"><option value="left" ${selected.foldDirection!=='right'?'selected':''}>左へ畳んで開く</option><option value="right" ${selected.foldDirection==='right'?'selected':''}>右へ畳んで開く</option></select>
+        <label>折る側（角度0°基準）</label>
+        <select id="pfoldSide"><option value="1" ${selected.foldSide!==-1?'selected':''}>壁の下側</option><option value="-1" ${selected.foldSide===-1?'selected':''}>壁の上側</option></select>
+        <p class="hint">2枚の戸を途中まで折った姿と、畳む方向の矢印を表示します。左右・上下は角度0°基準で、戸と一緒に回転します。</p>
+      `:''}
+      ${isDoor(selected)?'<p class="hint">X/Yは開口の壁芯始点。壁を選んで追加すると位置・角度・壁厚を引き継ぎます。ドアの円弧は90°までの開閉範囲、引き戸の矢印は移動方向です。</p>':''}
+      ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
+    `}
+    <button onclick="applyProps()">値を反映</button>
+    <button onclick="deleteSelected()">削除</button>
+    <p class="hint">寸法は直接入力できます。矢印キーで91mmずつ移動します。</p>
+  `;
+}
+function applyProps(){
+  const q=id=>document.getElementById(id);
+  if(!selected)return;
+  const inputs=[...document.querySelectorAll('#properties input[type="number"]')];
+  if(inputs.some(i=>i.value.trim()===''||!Number.isFinite(Number(i.value))) ||
+    (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
+    alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
+  }
+  selected.x=+q("pxx").value;selected.y=+q("pyy").value;
+  if(selected.type==="wall"){
+    selected.length=+q("plen").value;
+    selected.angle=+q("pang").value;
+    selected.thickness=+q("pth").value;
+  } else {
+    selected.width=+q("pww").value;selected.height=+q("phh").value;
+    selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    if(selected.type==='door'){
+      selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
+    }
+    if(selected.type==='slidingDoor'){
+      selected.slideDirection=q('pslideDirection').value;selected.slideSide=Number(q('pslideSide').value);
+    }
+    if(selected.type==='foldingDoor'){
+      selected.foldDirection=q('pfoldDirection').value;selected.foldSide=Number(q('pfoldSide').value);
+    }
+  }
+  render();
+}
+function changeWallLength(delta){
+  if(!selected || selected.type!=="wall")return;
+  selected.length=Math.max(1, selected.length+delta);
+  render();
+}
+function rotateSelected(delta){
+  if(!selected)return;
+  selected.angle=((selected.angle||0)+delta)%360;
+  if(selected.angle<0)selected.angle+=360;
+  render();
+}
+function deleteSelected(){
+  if(!selected)return;
+  data.walls=data.walls.filter(x=>x!==selected);data.fixtures=data.fixtures.filter(x=>x!==selected);
+  selected=null;render();
+}
+function zoom(f){scale*=f; svg.style.transform=`scale(${scale})`;svg.style.transformOrigin="top left"}
+function fit(){scale=1;svg.style.transform="scale(1)"}
+
+svg.addEventListener("pointerdown",e=>{if(e.button===0){selected=null;render()}});
+document.addEventListener("keydown",e=>{
+  if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
+  const k=e.key.toLowerCase();
+  if(k==="w")newWall();
+  else if(k==="t")addFixture("toilet");
+  else if(k==="b")addFixture("bath");
+  else if(k==="k")addFixture("kitchen");
+  else if(k==="d")addFixture("door");
+  else if(k==="f2" && selected)document.getElementById("pxx")?.focus();
+  else if(k==="r" && selected)rotateSelected(e.shiftKey?-90:90);
+  else if(e.key==="Delete")deleteSelected();
+  else if(selected && ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
+    e.preventDefault();
+    if(e.key==="ArrowLeft")selected.x-=91;
+    if(e.key==="ArrowRight")selected.x+=91;
+    if(e.key==="ArrowUp")selected.y-=91;
+    if(e.key==="ArrowDown")selected.y+=91;
+    render();
+  }
+});
+function saveJSON(){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="floorplan-910mm.json";a.click();
+}
+function loadJSON(){
+  const input=document.createElement("input");input.type="file";input.accept=".json";
+  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const loaded=WallModel.normalize(JSON.parse(r.result));dragEnd();data=loaded;selected=null;render()}catch(e){alert("JSONを読み込めませんでした")}};if(input.files[0])r.readAsText(input.files[0])};input.click();
+}
+newWall();
+newWall();
+data.walls[0].x=455;data.walls[0].y=455;data.walls[0].length=3640;data.walls[0].angle=0;data.walls[0].thickness=140;
+data.walls[1].x=455;data.walls[1].y=4095;data.walls[1].length=3640;data.walls[1].angle=0;data.walls[1].thickness=140;
+selected=null;render();
+</script>
+</body>
+</html>
