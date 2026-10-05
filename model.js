@@ -29,7 +29,43 @@
     const thickness=f.wallThickness??140,steps=f.steps??12,up=f.upDirection??'up';
     if(!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height)||
       !Number.isInteger(steps)||steps<1||steps>1000||!['up','down'].includes(up))throw Error('Invalid stairs');
-    return {x:thickness/2,y:thickness/2,width:f.width-thickness,height:f.height-thickness,steps,up};
+    const connections=f.connections??(f.type==='stairs'?['top','bottom']:[]);
+    if(!Array.isArray(connections)||connections.some(e=>!['top','bottom','left','right'].includes(e)))throw Error('Invalid connections');
+    const inset=e=>connections.includes(e)?0:thickness/2;
+    const width=f.width-inset('left')-inset('right'),height=f.height-inset('top')-inset('bottom');
+    const notch=Math.min(thickness/2,width/2,height/2);
+    const corners={tl:['top','left'],tr:['top','right'],br:['bottom','right'],bl:['bottom','left']};
+    const notches=Object.fromEntries(Object.entries(corners).map(([key,edges])=>[key,edges.every(e=>connections.includes(e))?notch:0]));
+    return {x:inset('left'),y:inset('top'),width,height,steps,up,connections,notches};
+  }
+  // Shared end treads are merged in world mm coordinates, including rotated stairs.
+  function stairEndLines(fixtures){
+    const groups=new Map(),epsilon=1e-6;
+    for(const f of fixtures){
+      if(f.type!=='stairs')continue;
+      const s=stairs(f),a=(f.angle??0)*Math.PI/180,c=Math.cos(a),sn=Math.sin(a);
+      const transform=(x,y)=>({x:f.x+f.width/2+(x-f.width/2)*c-(y-f.height/2)*sn,y:f.y+f.height/2+(x-f.width/2)*sn+(y-f.height/2)*c});
+      for(const edge of ['top','bottom']){
+        if(!s.connections.includes(edge))continue;
+        const top=edge==='top',y=s.y+(top?0:s.height);
+        const p=transform(s.x+s.notches[top?'tl':'bl'],y),q=transform(s.x+s.width-s.notches[top?'tr':'br'],y);
+        const length=Math.hypot(q.x-p.x,q.y-p.y);if(length<epsilon)continue;
+        let ux=(q.x-p.x)/length,uy=(q.y-p.y)/length;
+        if(ux<-epsilon||(Math.abs(ux)<epsilon&&uy<0)){ux=-ux;uy=-uy}
+        const normal=-uy*p.x+ux*p.y;
+        const key=[ux,uy,normal].map(v=>Math.round(v/epsilon)).join(',');
+        if(!groups.has(key))groups.set(key,{ux,uy,normal,intervals:[]});
+        const values=[ux*p.x+uy*p.y,ux*q.x+uy*q.y].sort((a,b)=>a-b);
+        groups.get(key).intervals.push(values);
+      }
+    }
+    const result=[];
+    for(const {ux,uy,normal,intervals} of groups.values()){
+      intervals.sort((a,b)=>a[0]-b[0]);const merged=[];
+      for(const range of intervals){const last=merged.at(-1);if(last&&range[0]<=last[1]+epsilon)last[1]=Math.max(last[1],range[1]);else merged.push([...range])}
+      for(const [a,b] of merged)result.push({x1:ux*a-uy*normal,y1:uy*a+ux*normal,x2:ux*b-uy*normal,y2:uy*b+ux*normal});
+    }
+    return result;
   }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
@@ -51,11 +87,11 @@
     }),fixtures:fixtures.map(f=>{
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
-      if(o.type==='stairs')stairs(o);
+      if(o.type==='stairs'||o.type==='landing')stairs(o);
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize,stairs};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
