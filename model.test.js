@@ -228,6 +228,35 @@ test('end treads merge shared and partial spans, retain gaps and rotate with sta
   assert.equal(ends[1].attrs.y1,409.5);
   assert.equal(ends[0].style.pointerEvents,'none');
 });
+test('quarter-turn stairs mirror treads, clip inner corner, rotate, join and round-trip',()=>{
+  const {run,nodes}=app();run('addFixture("turnStairs")');
+  assert.equal(run('selected.steps'),3);
+  for(const direction of ['right','left']){
+    for(const [id,value] of Object.entries({pxx:'0',pyy:'0',pww:'910',phh:'910',pang:'0',plabel:'曲がり階段',pstwall:'140',psteps:'3',pturn:direction}))nodes.set(id,{value});
+    run('applyProps()');
+    const g=nodes.get('objects').children[2];
+    assert.equal(g.children.length,6); // floor + edges + two treads + arrow halo/stroke
+    const ray=g.children[2].attrs;
+    near(ray.y1,91-7*Math.tan(Math.PI/6));
+    near(ray.x1,direction==='right'?84:7);
+    near(ray.x2,direction==='right'?7:84);
+    assert.ok(g.children[5].attrs.d.includes(direction==='right'?' 0 0 1 ':' 0 0 0 '));
+    for(const angle of [90,180,270]){
+      run('rotateSelected(90)');
+      assert.ok(nodes.get('objects').children[2].attrs.transform.includes(`rotate(${angle} `));
+    }
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+    assert.equal(run('selected.turnDirection'),direction);
+    assert.equal(run('selected.steps'),3);
+  }
+  const turn={type:'turnStairs',x:0,y:0,width:910,height:910,angle:0,turnDirection:'right'};
+  const straight={type:'stairs',x:0,y:910,width:910,height:2730,angle:0};
+  const lines=M.stairEndLines([turn,straight]);
+  assert.equal(lines.length,3);
+  const shared=lines.filter(l=>Math.abs(l.y1-910)<1e-6&&Math.abs(l.y2-910)<1e-6);
+  assert.equal(shared.length,1);near(shared[0].x1,70);near(shared[0].x2,840);
+  assert.throws(()=>M.stairs({...turn,turnDirection:'invalid'}));
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
