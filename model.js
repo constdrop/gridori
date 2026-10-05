@@ -72,6 +72,25 @@
     }
     return result;
   }
+  function washBack(f){
+    if(f.origin==='backCenter')return {x:f.x,y:f.y};
+    const a=(f.angle??0)*Math.PI/180;
+    return {x:f.x+f.width/2+Math.sin(a)*f.height/2,y:f.y+f.height/2-Math.cos(a)*f.height/2};
+  }
+  function snapWash(f,walls,tolerance=182){
+    const back=washBack(f),a=(f.angle??0)*Math.PI/180,nx=-Math.sin(a),ny=Math.cos(a);
+    let best=null;
+    for(const wall of walls){
+      const u=direction(wall);
+      if(Math.abs(u.x*nx+u.y*ny)>1e-6||wall.length<f.width)continue;
+      const offset=Math.max(f.width/2,Math.min(wall.length-f.width/2,(back.x-wall.x)*u.x+(back.y-wall.y)*u.y));
+      const x=wall.x+u.x*offset+nx*wall.thickness/2,y=wall.y+u.y*offset+ny*wall.thickness/2;
+      const distance=Math.hypot(x-back.x,y-back.y);
+      if(distance<=tolerance&&(!best||distance<best.distance))best={x,y,distance};
+    }
+    return best?{x:f.x+best.x-back.x,y:f.y+best.y-back.y,target:best}:
+      {x:Math.round(f.x/91)*91,y:Math.round(f.y/91)*91,target:null};
+  }
   function snapToilet(f){
     const dx=f.origin==='center'?0:f.width/2,dy=f.origin==='center'?0:f.height/2;
     const center=v=>Math.round((v-455)/910)*910+455;
@@ -108,7 +127,7 @@
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

@@ -121,7 +121,7 @@ function newWall(){
 function addFixture(type){
   const defs={
     toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
-    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
+    wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
     window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"], landing:[910,910,"踊り場"]
@@ -129,6 +129,15 @@ function addFixture(type){
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
   if(type==='toilet')n.origin='center';
+  if(type==='wash'){
+    n.origin='backCenter';
+    if(selected?.type==='wall'){
+      const a=(selected.angle??0)*Math.PI/180;
+      n.angle=selected.angle??0;n.width=Math.min(n.width,selected.length);
+      n.x=selected.x+Math.cos(a)*selected.length/2-Math.sin(a)*selected.thickness/2;
+      n.y=selected.y+Math.sin(a)*selected.length/2+Math.cos(a)*selected.thickness/2;
+    }
+  }
   if(type==='bath'){
     n.wallThickness=selected?.type==='wall'?selected.thickness:140;
     if(n.wallThickness>=Math.min(n.width,n.height)){alert('浴室の寸法より壁厚が大きいため追加できません。');return}
@@ -149,6 +158,20 @@ function addFixture(type){
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function drawWash(g,f){
+  const w=px(f.width),h=px(f.height);
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  shape('rect',{x:-w/2,y:0,width:w,height:h,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('rect',{x:-w/2,y:0,width:w,height:h*.18,fill:'#e6e6e6',stroke:'#333','stroke-width':1});
+  shape('path',{d:`M${-w*.4} ${h*.07}H${w*.4}`,stroke:'#666','stroke-width':1});
+  shape('ellipse',{cx:0,cy:h*.61,rx:w*.37,ry:h*.29,fill:'#eef6fa',stroke:'#555','stroke-width':1});
+  shape('circle',{cx:0,cy:h*.66,r:Math.min(w,h)*.025,fill:'#fff',stroke:'#555','stroke-width':.7});
+  shape('path',{d:`M0 ${h*.22}V${h*.4}`,stroke:'#333','stroke-width':2.5});
+}
 function drawToilet(g,f){
   const w=px(f.width),h=px(f.height);
   function shape(tag,attrs){
@@ -322,6 +345,12 @@ function render(){
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(f.type==='wash'){
+      const back=WallModel.washBack(f);
+      g.setAttribute('transform',`translate(${px(back.x)},${px(back.y)}) rotate(${f.angle||0})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      drawWash(g,f);objects.appendChild(g);continue;
+    }
     if(f.type==='toilet'){
       const cx=f.x+(f.origin==='center'?0:f.width/2),cy=f.y+(f.origin==='center'?0:f.height/2);
       g.setAttribute('transform',`translate(${px(cx)},${px(cy)}) rotate(${f.angle||0}) translate(${-px(f.width/2)},${-px(f.height/2)})`);
@@ -378,6 +407,7 @@ function dragMove(e){
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
     d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
+    d.obj.type==='wash'?WallModel.snapWash({...d.obj,x,y},data.walls):
     {x:Math.round(x/91)*91,y:Math.round(y/91)*91};
   d.obj.x=position.x;d.obj.y=position.y;snapTarget=position.target;render();
 }
@@ -421,6 +451,10 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='wash'?`
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">灰色の帯が棚・鏡の背面、楕円が洗面ボウルです。0°では背面が上です。壁と平行に回転して近づけると、背面が壁面へ吸着します（182mm以内）。${selected.origin==='backCenter'?'X/Yは背面中央で、回転の中心です。':'旧データの位置と回転中心を維持します。'}</p>
+      `:''}
       ${selected.type==='toilet'?`
         <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
         <p class="hint">ドラッグすると便器全体の中心が910mmのマスの中心に吸着します。0°ではタンクが上、便器の正面が下です。${selected.origin==='center'?'X/Yは中心位置です。':'旧データのX/Yは回転前の外形左上です。'}数値入力・矢印キーで微調整できます。</p>
