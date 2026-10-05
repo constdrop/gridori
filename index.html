@@ -120,7 +120,7 @@ function newWall(){
 }
 function addFixture(type){
   const defs={
-    toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
     wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
@@ -128,6 +128,7 @@ function addFixture(type){
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(type==='toilet')n.origin='center';
   if(type==='bath'){
     n.wallThickness=selected?.type==='wall'?selected.thickness:140;
     if(n.wallThickness>=Math.min(n.width,n.height)){alert('浴室の寸法より壁厚が大きいため追加できません。');return}
@@ -148,6 +149,19 @@ function addFixture(type){
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function drawToilet(g,f){
+  const w=px(f.width),h=px(f.height);
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  // Tank is at the back (top at 0 degrees); bowl points downward.
+  shape('ellipse',{cx:w/2,cy:h*.61,rx:w*.46,ry:h*.39,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('ellipse',{cx:w/2,cy:h*.61,rx:w*.32,ry:h*.28,fill:'#f2f7fa',stroke:'#555','stroke-width':.8});
+  shape('rect',{x:0,y:0,width:w,height:h*.25,rx:Math.min(w,h)*.06,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('circle',{cx:w*.8,cy:h*.12,r:Math.min(w,h)*.035,fill:'#fff',stroke:'#555','stroke-width':.7});
+}
 function drawBath(g,f){
   const room=WallModel.bath(f),tub=room.tub;
   function rect(box,attrs){
@@ -308,6 +322,12 @@ function render(){
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(f.type==='toilet'){
+      const cx=f.x+(f.origin==='center'?0:f.width/2),cy=f.y+(f.origin==='center'?0:f.height/2);
+      g.setAttribute('transform',`translate(${px(cx)},${px(cy)}) rotate(${f.angle||0}) translate(${-px(f.width/2)},${-px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      drawToilet(g,f);objects.appendChild(g);continue;
+    }
     if(isOpening(f)){
       // Retain the position of older windows whose origin was the bounding-box corner.
       g.setAttribute('transform',f.centerline?
@@ -357,6 +377,7 @@ function dragMove(e){
   if(!dragState)return;
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
     {x:Math.round(x/91)*91,y:Math.round(y/91)*91};
   d.obj.x=position.x;d.obj.y=position.y;snapTarget=position.target;render();
 }
@@ -400,6 +421,10 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='toilet'?`
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">ドラッグすると便器全体の中心が910mmのマスの中心に吸着します。0°ではタンクが上、便器の正面が下です。${selected.origin==='center'?'X/Yは中心位置です。':'旧データのX/Yは回転前の外形左上です。'}数値入力・矢印キーで微調整できます。</p>
+      `:''}
       ${selected.type==='bath'?`
         <label>周囲の壁厚 (mm)</label><input id="pbathwall" type="number" min="0" value="${selected.wallThickness??140}">
         <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>

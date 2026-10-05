@@ -72,6 +72,11 @@
     }
     return result;
   }
+  function snapToilet(f){
+    const dx=f.origin==='center'?0:f.width/2,dy=f.origin==='center'?0:f.height/2;
+    const center=v=>Math.round((v-455)/910)*910+455;
+    return {x:center(f.x+dx)-dx,y:center(f.y+dy)-dy};
+  }
   function bath(f){
     const thickness=f.wallThickness??140;
     if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
@@ -103,7 +108,7 @@
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
