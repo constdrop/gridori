@@ -25,6 +25,12 @@
     return best?{x:w.x+best.dx,y:w.y+best.dy,target:best}:
       {x:Math.round(w.x/455)*455,y:Math.round(w.y/455)*455,target:null};
   }
+  function stairs(f){
+    const thickness=f.wallThickness??140,steps=f.steps??12,up=f.upDirection??'up';
+    if(!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height)||
+      !Number.isInteger(steps)||steps<1||steps>1000||!['up','down'].includes(up))throw Error('Invalid stairs');
+    return {x:thickness/2,y:thickness/2,width:f.width-thickness,height:f.height-thickness,steps,up};
+  }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
     const walls=input.walls??input.objects?.filter(o=>o.type==='wall');
@@ -45,10 +51,11 @@
     }),fixtures:fixtures.map(f=>{
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
+      if(o.type==='stairs')stairs(o);
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize};
+  const api={endpoints,body,snapWall,normalize,stairs};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

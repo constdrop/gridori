@@ -136,9 +136,30 @@ function addFixture(type){
   if(type==='door'){n.handing='left';n.swingSide=1}
   if(type==='slidingDoor'){n.slideDirection='right';n.slideSide=-1}
   if(type==='foldingDoor'){n.foldDirection='left';n.foldSide=1}
+  if(type==='stairs'){n.wallThickness=selected?.type==='wall'?selected.thickness:140;n.steps=12;n.upDirection='up';if(n.wallThickness>=Math.min(n.width,n.height))n.wallThickness=140}
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function drawStairs(g,f){
+  const s=WallModel.stairs(f),x=px(s.x),y=px(s.y),w=px(s.width),h=px(s.height);
+  function shape(tag,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,value);
+    g.appendChild(n);
+  }
+  shape('rect',{x,y,width:w,height:h,fill:'#fff',stroke:'#333','stroke-width':1});
+  for(let i=1;i<=s.steps;i++){
+    const at=y+h*i/(s.steps+1);
+    shape('line',{x1:x,y1:at,x2:x+w,y2:at,stroke:'#666','stroke-width':.8});
+  }
+  const cx=x+w/2,top=y+h*.12,bottom=y+h*.88;
+  const end=s.up==='up'?top:bottom,start=s.up==='up'?bottom:top;
+  const size=Math.min(w*.16,h*.08,10),back=end+(s.up==='up'?size:-size);
+  const d=`M${cx} ${start}V${end} M${cx-size} ${back}L${cx} ${end}L${cx+size} ${back}`;
+  // White halo keeps the upward arrow readable across the tread lines.
+  shape('path',{d,fill:'none',stroke:'#fff','stroke-width':5});
+  shape('path',{d,fill:'none',stroke:'#222','stroke-width':1.8});
+}
 function isDoor(f){return ['door','slidingDoor','doubleSlidingDoor','foldingDoor'].includes(f.type)}
 function isOpening(f){return isWindow(f)||isDoor(f)}
 function drawDoor(g,f){
@@ -250,6 +271,7 @@ function render(){
     }
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
+    if(f.type==='stairs'){drawStairs(g,f);objects.appendChild(g);continue}
     const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
     r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
     r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
@@ -323,6 +345,12 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='stairs'?`
+        <label>周囲の壁厚 (mm)</label><input id="pstwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <label>段数（内部の線の本数）</label><input id="psteps" type="number" min="1" max="1000" step="1" value="${selected.steps??12}">
+        <label>上り方向（角度0°基準）</label><select id="pup"><option value="up" ${selected.upDirection!=='down'?'selected':''}>図の上へ</option><option value="down" ${selected.upDirection==='down'?'selected':''}>図の下へ</option></select>
+        <p class="hint">幅・高さは壁芯間の寸法です。四辺を壁厚の半分ずつ内側へ寄せます。矢印は上り方向を示し、階段と一緒に回転します。</p>
+      `:''}
       ${selected.type==='door'?`
         <label>開き勝手（角度0°での吊元）</label>
         <select id="phanding"><option value="left" ${selected.handing!=='right'?'selected':''}>左開き（左が吊元）</option><option value="right" ${selected.handing==='right'?'selected':''}>右開き（右が吊元）</option></select>
@@ -358,6 +386,11 @@ function applyProps(){
   if(inputs.some(i=>i.value.trim()===''||!Number.isFinite(Number(i.value))) ||
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
+  }
+  if(selected.type==='stairs'){
+    const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pstwall').value,steps:+q('psteps').value,upDirection:q('pup').value};
+    try{WallModel.stairs(next)}catch{alert('壁厚は0以上かつ幅・高さ未満、段数は1〜1000の整数で入力してください。');return}
+    selected.wallThickness=next.wallThickness;selected.steps=next.steps;selected.upDirection=next.upDirection;
   }
   selected.x=+q("pxx").value;selected.y=+q("pyy").value;
   if(selected.type==="wall"){
