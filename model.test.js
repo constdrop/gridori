@@ -139,6 +139,34 @@ test('folding doors retain equal leaf lengths for all directions, rotations and 
     assert.equal(run('selected.centerline'),true);
   }
 });
+test('stairs inset all edges, draw exact tread count and preserve direction through editing and import',()=>{
+  const {run,nodes}=app();
+  run('addFixture("stairs")');
+  let g=nodes.get('objects').children[2];
+  assert.equal(g.children[0].attrs.x,7);
+  assert.equal(g.children[0].attrs.y,7);
+  assert.equal(g.children[0].attrs.width,77);
+  assert.equal(g.children[0].attrs.height,259);
+  assert.equal(g.children.length,15); // outline + 12 lines + two arrow strokes, no text
+  const arrow=g.children.at(-1).attrs.d;
+  for(const [id,value] of Object.entries({pxx:'1365',pyy:'1365',pww:'910',phh:'2730',pang:'90',plabel:'階段',pstwall:'200',psteps:'16',pup:'down'}))nodes.set(id,{value});
+  run('applyProps()');g=nodes.get('objects').children[2];
+  assert.equal(g.children.length,19);
+  assert.equal(g.children[0].attrs.x,10);
+  assert.equal(g.children[0].attrs.width,71);
+  assert.ok(g.attrs.transform.includes('rotate(90'));
+  assert.notEqual(g.children.at(-1).attrs.d,arrow);
+  const coords=g.children.at(-1).attrs.d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  assert.ok(coords[2]>coords[1]); // down arrow ends below its start
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.steps'),16);
+  assert.equal(run('selected.wallThickness'),200);
+  assert.equal(run('selected.upDirection'),'down');
+  nodes.set('psteps',{value:'2.5'});run('applyProps()');assert.equal(run('selected.steps'),16);
+  assert.throws(()=>M.stairs({width:910,height:2730,wallThickness:910}));
+  assert.throws(()=>M.stairs({width:910,height:2730,steps:0}));
+  assert.equal(M.stairs({width:910,height:2730}).steps,12);
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
