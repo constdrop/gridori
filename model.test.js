@@ -317,6 +317,36 @@ test('toilets rotate around a grid-cell center and preserve legacy positions',()
   assert.equal(nodes.get('objects').children[2].attrs.transform,'translate(123.5,110) rotate(270) translate(-32.5,-19)');
   assert.deepEqual(M.snapToilet({width:650,height:380,x:910,y:910}),{x:1040,y:1175});
 });
+test('washstand back snaps to wall faces in four orientations, without crossing wall ends',()=>{
+  for(const angle of [0,90,180,270]){
+    const a=angle*Math.PI/180,ux=Math.cos(a),uy=Math.sin(a),nx=-uy,ny=ux;
+    const wall={id:'wall',type:'wall',x:0,y:0,length:2730,angle,thickness:200};
+    const f={type:'wash',origin:'backCenter',x:ux*1365+nx*130,y:uy*1365+ny*130,width:750,height:910*2/3,angle};
+    const snapped=M.snapWash(f,[wall]);
+    near(snapped.x,ux*1365+nx*100);near(snapped.y,uy*1365+ny*100);
+    assert.ok(snapped.target);
+    assert.equal(M.snapWash(f,[{...wall,length:500}]).target,null);
+  }
+  const wall={id:'w',x:0,y:0,length:2730,angle:0,thickness:140};
+  const f={origin:'backCenter',x:100,y:70,width:750,height:607,angle:0};
+  assert.equal(M.snapWash(f,[wall]).target,null); // too far from a fully supported position
+  assert.equal(M.snapWash({...f,x:300},[wall]).x,375);
+  assert.equal(M.snapWash({...f,x:1000,angle:90},[wall]).target,null);
+  const {run,nodes}=app();run('selected=data.walls[0];addFixture("wash")');
+  near(run('selected.height'),910*2/3);
+  assert.equal(run('selected.y'),525);
+  for(const angle of [0,90,180,270]){
+    if(angle)run('rotateSelected(90)');
+    const g=nodes.get('objects').children[2];
+    assert.equal(g.attrs.transform,`translate(227.5,52.5) rotate(${angle})`);
+    assert.equal(g.children.length,6);
+    assert.equal(g.children[1].attrs.y,0);
+  }
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.origin'),'backCenter');assert.equal(run('selected.angle'),270);
+  const legacy=M.washBack({x:100,y:200,width:750,height:600,angle:90});
+  near(legacy.x,775);near(legacy.y,500);
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
