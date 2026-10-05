@@ -299,6 +299,24 @@ test('bathrooms render beneath doors regardless of creation or JSON order',()=>{
     assert.equal(run('data.fixtures.map(f=>f.id).join(",")'),before);
   }
 });
+test('toilets rotate around a grid-cell center and preserve legacy positions',()=>{
+  const {run,nodes}=app();run('addFixture("toilet")');
+  assert.equal(run('selected.origin'),'center');assert.equal(run('selected.height'),650);
+  for(const angle of [0,90,180,270]){
+    if(angle)run('rotateSelected(90)');
+    const g=nodes.get('objects').children[2];
+    assert.equal(g.attrs.transform,`translate(136.5,136.5) rotate(${angle}) translate(-19,-32.5)`);
+    assert.equal(g.children.length,4);
+    assert.equal(g.children[2].attrs.y,0);
+    assert.ok(g.children[0].attrs.cy>g.children[2].attrs.height);
+    assert.deepEqual(M.snapToilet({origin:'center',width:380,height:650,x:1400,y:1300,angle}),{x:1365,y:1365});
+  }
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.origin'),'center');assert.equal(run('selected.angle'),270);
+  run('delete selected.origin;selected.width=650;selected.height=380;selected.x=910;selected.y=910;render()');
+  assert.equal(nodes.get('objects').children[2].attrs.transform,'translate(123.5,110) rotate(270) translate(-32.5,-19)');
+  assert.deepEqual(M.snapToilet({width:650,height:380,x:910,y:910}),{x:1040,y:1175});
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
@@ -336,7 +354,7 @@ test('actual SVG renderer: creation, rotation, numeric length, L/T/cross joins a
   assert.equal(nodes.get('objects').children[1].attrs.transform,'translate(182,91) rotate(90)');
   run('data.walls[1].y=0;render()');
   assert.equal(nodes.get('objects').children[1].attrs.transform,'translate(182,0) rotate(90)');
-  run('addFixture("toilet");rotateSelected(90)');assert.equal(run('selected.width'),650);
+  run('addFixture("toilet");rotateSelected(90)');assert.equal(run('selected.width'),380);
   run('deleteSelected()');assert.equal(run('data.fixtures.length'),0);
   run('data.walls=[{id:"w99",type:"wall",x:0,y:0,length:1,angle:0,thickness:140}];uid=99;newWall()');
   assert.equal(run('selected.id'),'w100');
