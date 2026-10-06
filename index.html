@@ -42,7 +42,11 @@
     <button onclick="newWall()">＋ 壁</button>
     <button onclick="addFixture('toilet')">＋ トイレ</button>
     <button onclick="addFixture('bath')">＋ ユニットバス</button>
-    <button onclick="addFixture('kitchen')">＋ キッチン</button>
+    <h3>キッチン（組み合わせ）</h3>
+    <button onclick="addKitchen('counter')">＋ 作業台</button>
+    <button onclick="addKitchen('sink')">＋ シンク台</button>
+    <button onclick="addKitchen('stove')">＋ コンロ台</button>
+    <button onclick="addKitchen('corner')">＋ コーナー</button>
     <button onclick="addFixture('wash')">＋ 洗面台</button>
     <button onclick="addFixture('washer')">＋ 洗濯機</button>
     <button onclick="addFixture('door')">＋ ドア</button>
@@ -119,6 +123,7 @@ function newWall(){
   data.walls.push(n); selected=n; render();
 }
 function addFixture(type){
+  if(type==='kitchen'){addKitchen('counter');return}
   const defs={
     toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
     wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
@@ -158,6 +163,47 @@ function addFixture(type){
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function addKitchen(kind,turn=0){
+  const n={id:nextId('f'),type:'kitchen',kitchenKind:kind,origin:'backCenter',x:1365,y:1365,width:kind==='corner'?600:750,height:600,angle:0,label:'キッチン'};
+  if(selected?.type==='kitchen'){
+    const placement=WallModel.nextKitchen(selected,n,turn);
+    Object.assign(n,placement);
+  }else if(selected?.type==='wall'){
+    const a=(selected.angle??0)*Math.PI/180;
+    n.angle=selected.angle??0;n.width=Math.min(n.width,selected.length);
+    n.x=selected.x+Math.cos(a)*selected.length/2-Math.sin(a)*selected.thickness/2;
+    n.y=selected.y+Math.sin(a)*selected.length/2+Math.cos(a)*selected.thickness/2;
+  }
+  data.fixtures.push(n);selected=n;render();
+}
+function drawKitchen(g,f){
+  const w=px(f.width),h=px(f.height),kind=f.kitchenKind??'combined';
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  shape('rect',{x:-w/2,y:0,width:w,height:h,fill:'#fff',stroke:'#333','stroke-width':1});
+  shape('path',{d:`M${-w/2} ${h*.06}H${w/2}`,stroke:'#888','stroke-width':.7});
+  function sink(cx,span){
+    shape('rect',{x:cx-span*.38,y:h*.22,width:span*.76,height:h*.63,rx:Math.min(span,h)*.07,fill:'#eef6fa',stroke:'#333','stroke-width':1});
+    shape('circle',{cx,cy:h*.59,r:Math.min(span,h)*.025,fill:'#fff',stroke:'#555','stroke-width':.7});
+    shape('path',{d:`M${cx} ${h*.12}V${h*.32}`,stroke:'#333','stroke-width':2});
+  }
+  function stove(cx,span){
+    shape('rect',{x:cx-span*.42,y:h*.16,width:span*.84,height:h*.71,fill:'#eee',stroke:'#333','stroke-width':1});
+    for(const [dx,dy,size] of [[-.22,.62,.12],[.22,.62,.12],[0,.34,.09]]){
+      shape('circle',{cx:cx+span*dx,cy:h*dy,r:Math.min(span,h)*size,fill:'#fff',stroke:'#333','stroke-width':1});
+    }
+  }
+  if(kind==='sink')sink(0,w);
+  if(kind==='stove')stove(0,w);
+  if(kind==='combined'){sink(-w*.25,w*.4);stove(w*.27,w*.33)}
+  if(kind==='corner'){
+    const side=f.cornerSide==='left'?-1:1;
+    shape('path',{d:`M${-side*w/2} 0H${side*w/2}V${h}`,fill:'none',stroke:'#486477','stroke-width':3});
+  }
+}
 function drawWash(g,f){
   const w=px(f.width),h=px(f.height);
   function shape(tag,attrs){
@@ -345,11 +391,12 @@ function render(){
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
-    if(f.type==='wash'){
+    if(f.type==='wash'||f.type==='kitchen'){
       const back=WallModel.washBack(f);
       g.setAttribute('transform',`translate(${px(back.x)},${px(back.y)}) rotate(${f.angle||0})`);
       g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
-      drawWash(g,f);objects.appendChild(g);continue;
+      if(f.type==='kitchen')drawKitchen(g,f);else drawWash(g,f);
+      objects.appendChild(g);continue;
     }
     if(f.type==='toilet'){
       const cx=f.x+(f.origin==='center'?0:f.width/2),cy=f.y+(f.origin==='center'?0:f.height/2);
@@ -407,6 +454,7 @@ function dragMove(e){
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
     d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
+    d.obj.type==='kitchen'?WallModel.snapKitchen({...d.obj,x,y},data.walls):
     d.obj.type==='wash'?WallModel.snapWash({...d.obj,x,y},data.walls):
     {x:Math.round(x/91)*91,y:Math.round(y/91)*91};
   d.obj.x=position.x;d.obj.y=position.y;snapTarget=position.target;render();
@@ -451,6 +499,14 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='kitchen'?`
+        <label>キッチン部品</label><select id="pkitchen">${[['counter','作業台'],['sink','シンク台'],['stove','コンロ台'],['corner','コーナー'],['combined','一体型（シンク＋コンロ）']].map(([value,label])=>`<option value="${value}" ${(selected.kitchenKind??'combined')===value?'selected':''}>${label}</option>`).join('')}</select>
+        <label>コーナーの壁側（角度0°基準）</label><select id="pcornerSide"><option value="right" ${selected.cornerSide!=='left'?'selected':''}>背面（上）＋右側</option><option value="left" ${selected.cornerSide==='left'?'selected':''}>背面（上）＋左側</option></select>
+        <p class="hint">コーナーの太い青灰色の2辺が壁側です。設定は回転に追従します。ドラッグは自由配置で、壁に近いときだけ壁面へ吸着します。壁に沿う方向も自由に動かせます。</p>
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        ${selected.kitchenKind==='corner'?'<button onclick="addKitchen(\'counter\',90)">コーナーから右回りに作業台を追加</button><button onclick="addKitchen(\'counter\',-90)">コーナーから左回りに作業台を追加</button>':''}
+        <p class="hint">部品を選んで左のキッチン部品ボタンを押すと、右隣（回転前基準）に隙間なく追加します。L字はコーナーを追加してから、曲がる側に作業台を追加し、種類を変更できます。変更した入力値は先に「値を反映」してください。追加後の部品は個別に移動・回転できます。</p>
+      `:''}
       ${selected.type==='wash'?`
         <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
         <p class="hint">灰色の帯が棚・鏡の背面、楕円が洗面ボウルです。0°では背面が上です。壁と平行に回転して近づけると、背面が壁面へ吸着します（182mm以内）。${selected.origin==='backCenter'?'X/Yは背面中央で、回転の中心です。':'旧データの位置と回転中心を維持します。'}</p>
@@ -539,6 +595,7 @@ function applyProps(){
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
     selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
     }
