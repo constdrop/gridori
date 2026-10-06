@@ -440,6 +440,7 @@ test('kitchen dragging is free except normal-to-wall snaps, and corners snap bot
   assert.equal(run('data.fixtures[0].cornerSide'),'left');
 });
 test('railing walls share wall geometry and editing, persist, and render below normal walls',()=>{
+  assert.throws(()=>M.normalize({version:3,walls:[wall({wallKind:'invalid'})],fixtures:[]}),/Invalid wall kind/);
   for(const railingFirst of [true,false]){
     const {run,nodes}=app();
     run('data.walls=[]');
