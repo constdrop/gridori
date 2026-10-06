@@ -377,6 +377,47 @@ test('kitchen modules form straight and mirrored L layouts, show equipment and r
   run('delete selected.kitchenKind;delete selected.origin;render()');
   assert.equal(nodes.get('objects').children[6].children.length,9); // legacy combined unit
 });
+test('kitchen branches extend away from either corner after rotation and JSON round trips',()=>{
+  for(const angle of [0,90,180,270])for(const turn of [-90,90]){
+    const {run}=app();
+    run(`addKitchen('corner');rotateSelected(${angle});addKitchen('counter',${turn})`);
+    // Reload before each further addition to verify growthDirection survives persistence.
+    for(const kind of ['sink','stove']){
+      run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures.at(-1);render()');
+      assert.equal(run('selected.growthDirection'),turn>0?1:-1);
+      run(`addKitchen('${kind}')`);
+    }
+    const fixtures=JSON.parse(run('JSON.stringify(data.fixtures)'));
+    const corner=fixtures[0],a=angle*Math.PI/180;
+    // Compare actual footprints in the corner's frame, rather than just direction flags.
+    function bounds(f){
+      const back=M.washBack(f),r=f.angle*Math.PI/180;
+      const points=[[-f.width/2,0],[f.width/2,0],[f.width/2,f.height],[-f.width/2,f.height]].map(([x,y])=>{
+        const dx=back.x+x*Math.cos(r)-y*Math.sin(r)-corner.x;
+        const dy=back.y+x*Math.sin(r)+y*Math.cos(r)-corner.y;
+        return {x:dx*Math.cos(a)+dy*Math.sin(a),y:-dx*Math.sin(a)+dy*Math.cos(a)};
+      });
+      return {left:Math.min(...points.map(p=>p.x)),right:Math.max(...points.map(p=>p.x)),top:Math.min(...points.map(p=>p.y)),bottom:Math.max(...points.map(p=>p.y))};
+    }
+    let previous=bounds(corner);
+    for(const f of fixtures.slice(1)){
+      const current=bounds(f);
+      near(current.left,-300);near(current.right,300);
+      near(current.top,previous.bottom); // touches without a gap or overlap
+      near(current.bottom-current.top,750);
+      assert.equal(f.growthDirection,turn>0?1:-1);
+      previous=current;
+    }
+    near(previous.bottom,2850); // 600mm corner + three 750mm modules
+  }
+});
+test('kitchen straight additions retain legacy positive growth and use edited module widths',()=>{
+  const previous={origin:'backCenter',x:100,y:200,width:600,height:600,angle:0};
+  const positive=M.nextKitchen(previous,{width:800});
+  near(positive.x,800);near(positive.y,200);assert.equal(positive.growthDirection,1);
+  const negative=M.nextKitchen({...previous,growthDirection:-1},{width:800});
+  near(negative.x,-600);near(negative.y,200);assert.equal(negative.growthDirection,-1);
+});
 test('kitchen dragging is free except normal-to-wall snaps, and corners snap both marked sides',()=>{
   const f={type:'kitchen',kitchenKind:'counter',origin:'backCenter',x:617.3,y:123.4,width:600,height:600,angle:0};
   assert.deepEqual(M.snapKitchen(f,[]),{x:617.3,y:123.4,target:null});
