@@ -439,6 +439,33 @@ test('kitchen dragging is free except normal-to-wall snaps, and corners snap bot
   run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
   assert.equal(run('data.fixtures[0].cornerSide'),'left');
 });
+test('railing walls share wall geometry and editing, persist, and render below normal walls',()=>{
+  for(const railingFirst of [true,false]){
+    const {run,nodes}=app();
+    run('data.walls=[]');
+    run(railingFirst?'newWall("railing");newWall()':'newWall();newWall("railing")');
+    run('selected=data.walls.find(w=>w.wallKind==="railing");rotateSelected(90);changeWallLength(455)');
+    let g=nodes.get('objects').children[0];
+    assert.equal(g.dataset.id,run('selected.id'));
+    assert.equal(g.children[0].attrs.fill,'#777');
+    assert.equal(g.children[0].attrs.x,-7);
+    assert.equal(g.children[0].attrs.width,332.5);
+    assert.equal(g.attrs.transform,'translate(91,91) rotate(90)');
+    assert.equal(nodes.get('objects').children[1].children[0].attrs.fill,'#444');
+    const before=run('data.walls.map(w=>w.id).join(",")');
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.walls.find(w=>w.wallKind==="railing");render()');
+    assert.equal(run('data.walls.map(w=>w.id).join(",")'),before);
+    assert.equal(nodes.get('objects').children[0].dataset.id,run('selected.id'));
+    for(const [id,value] of Object.entries({pxx:'910',pyy:'910',plen:'1000',pang:'180',pth:'100',pwallkind:'railing'}))nodes.set(id,{value});
+    run('applyProps()');assert.equal(run('selected.wallKind'),'railing');assert.equal(run('selected.thickness'),100);
+    nodes.set('pwallkind',{value:'normal'});run('applyProps()');assert.equal(run('selected.wallKind'),undefined);
+  }
+  const railing=wall({wallKind:'railing',x:950,y:950});
+  const snapped=M.snapWall(railing,[wall({id:'other',x:3640,y:910,angle:90})]);
+  near(snapped.x,910);near(snapped.y,910);
+  const reverse=M.snapWall(wall({x:950,y:950}),[wall({id:'other',wallKind:'railing',x:3640,y:910,angle:90})]);
+  near(reverse.x,910);near(reverse.y,910);
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
