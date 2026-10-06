@@ -79,9 +79,10 @@
   }
   function nextKitchen(previous,next,turn=0){
     const back=washBack(previous),a=(previous.angle??0)*Math.PI/180;
-    let x=previous.width/2+next.width/2,y=0;
+    const growthDirection=turn?(turn>0?1:-1):(previous.growthDirection===-1?-1:1);
+    let x=growthDirection*(previous.width/2+next.width/2),y=0;
     if(turn){x=turn>0?previous.width/2:-previous.width/2;y=previous.height+next.width/2}
-    return {x:back.x+x*Math.cos(a)-y*Math.sin(a),y:back.y+x*Math.sin(a)+y*Math.cos(a),angle:(((previous.angle??0)+turn)%360+360)%360};
+    return {x:back.x+x*Math.cos(a)-y*Math.sin(a),y:back.y+x*Math.sin(a)+y*Math.cos(a),angle:(((previous.angle??0)+turn)%360+360)%360,growthDirection};
   }
   function snapWash(f,walls,tolerance=182){
     const back=washBack(f),a=(f.angle??0)*Math.PI/180,nx=-Math.sin(a),ny=Math.cos(a);
