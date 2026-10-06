@@ -29,6 +29,20 @@
   .legend{font-size:11px;line-height:1.6}
   .kbd{font-family:monospace;background:#eee;border:1px solid #ccc;border-radius:3px;padding:1px 4px}
   .empty{color:#777;font-size:12px;line-height:1.6}
+  @page{size:A4 landscape;margin:10mm}
+  @media print{
+    html,body{margin:0;padding:0;background:#fff}
+    header,aside,.status{display:none!important}
+    main{display:block;height:auto}
+    .canvas{position:static;overflow:visible;background:#fff}
+    #svg{
+      width:277mm;height:189mm;margin:0;box-shadow:none;
+      transform:none!important;break-inside:avoid;
+      print-color-adjust:exact;-webkit-print-color-adjust:exact;
+    }
+    .selected{outline:none!important}
+    .editor-guide{display:none}
+  }
 </style>
 </head>
 <body>
@@ -379,6 +393,7 @@ function render(){
 
     for(const x of [0,w.length]){
       const dot=document.createElementNS("http://www.w3.org/2000/svg","circle");
+      dot.setAttribute('class','editor-guide');
       dot.setAttribute("cx",px(x));dot.setAttribute("cy",0);dot.setAttribute("r",3);
       dot.setAttribute("fill",selected===w?"#1976d2":"#fff");g.appendChild(dot);
     }
@@ -431,6 +446,7 @@ function render(){
   }
   if(snapTarget){
     const marker=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    marker.setAttribute('class','editor-guide');
     marker.setAttribute("cx",px(snapTarget.x));marker.setAttribute("cy",px(snapTarget.y));
     marker.setAttribute("r",6);marker.setAttribute("fill","none");marker.setAttribute("stroke","#e07800");
     marker.setAttribute("stroke-width",2);marker.style.pointerEvents="none";objects.appendChild(marker);
