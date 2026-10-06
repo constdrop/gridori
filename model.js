@@ -152,6 +152,8 @@
       // Legacy width is the nominal length; x/y already denoted the reference point.
       const o=check({id:w.id,type:'wall',x:w.x,y:w.y,length:w.length??w.width,angle:w.angle??0,thickness:w.thickness??140},['x','y','length','angle','thickness']);
       if(o.length<=0||o.thickness<=0)throw Error('Invalid wall size');
+      if(w.wallKind!==undefined&&!['normal','railing'].includes(w.wallKind))throw Error('Invalid wall kind');
+      if(w.wallKind==='railing')o.wallKind='railing';
       return o;
     }),fixtures:fixtures.map(f=>{
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);

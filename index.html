@@ -40,6 +40,7 @@
   <aside>
     <h3>部品</h3>
     <button onclick="newWall()">＋ 壁</button>
+    <button onclick="newWall('railing')">＋ 手すり壁</button>
     <button onclick="addFixture('toilet')">＋ トイレ</button>
     <button onclick="addFixture('bath')">＋ ユニットバス</button>
     <h3>キッチン（組み合わせ）</h3>
@@ -118,8 +119,9 @@ function px(mm){return mm*0.1}
 function mm(pxv){return pxv/0.1}
 function nextId(prefix){while(all().some(o=>o.id===prefix+uid))uid++;return prefix+uid++}
 
-function newWall(){
+function newWall(kind='normal'){
   const n={id:nextId("w"),type:"wall",x:910,y:910,length:2730,angle:0,thickness:140};
+  if(kind==='railing')n.wallKind='railing';
   data.walls.push(n); selected=n; render();
 }
 function addFixture(type){
@@ -354,7 +356,9 @@ function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt
 
 function render(){
   objects.innerHTML="";
-  for(const w of data.walls){
+  // Normal walls cover railing walls at shared joints, regardless of creation order.
+  const wallsInDrawOrder=[...data.walls.filter(w=>w.wallKind==='railing'),...data.walls.filter(w=>w.wallKind!=='railing')];
+  for(const w of wallsInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
     const shape=WallModel.body(w), half=px(w.thickness)/2;
     const cx=px(w.x), cy=px(w.y);
@@ -368,7 +372,7 @@ function render(){
     r.setAttribute("y",px(shape.y));
     r.setAttribute("width",px(shape.width));
     r.setAttribute("height",px(shape.height));
-    r.setAttribute("fill","#444");
+    r.setAttribute("fill",w.wallKind==='railing'?'#777':'#444');
     g.appendChild(r);
 
     // Show the nominal wall length and the actual drawn length separately.
@@ -484,6 +488,7 @@ function showProps(){
       <div><label>Y (mm)</label><input id="pyy" type="number" value="${selected.y}"></div>
     </div>
     ${isWall?`
+      <label>壁の種類</label><select id="pwallkind"><option value="normal" ${selected.wallKind!=='railing'?'selected':''}>壁</option><option value="railing" ${selected.wallKind==='railing'?'selected':''}>手すり壁</option></select>
       <label>設定長・壁芯間 (mm)</label><input id="plen" type="number" value="${selected.length}">
       <div class="row">
         <div><label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}" step="1"></div>
@@ -589,6 +594,7 @@ function applyProps(){
   }
   selected.x=+q("pxx").value;selected.y=+q("pyy").value;
   if(selected.type==="wall"){
+    if(q('pwallkind')?.value==='railing')selected.wallKind='railing';else delete selected.wallKind;
     selected.length=+q("plen").value;
     selected.angle=+q("pang").value;
     selected.thickness=+q("pth").value;
