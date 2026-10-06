@@ -72,6 +72,70 @@
     }
     return result;
   }
+  function washBack(f){
+    if(f.origin==='backCenter')return {x:f.x,y:f.y};
+    const a=(f.angle??0)*Math.PI/180;
+    return {x:f.x+f.width/2+Math.sin(a)*f.height/2,y:f.y+f.height/2-Math.cos(a)*f.height/2};
+  }
+  function nextKitchen(previous,next,turn=0){
+    const back=washBack(previous),a=(previous.angle??0)*Math.PI/180;
+    const growthDirection=turn?(turn>0?1:-1):(previous.growthDirection===-1?-1:1);
+    let x=growthDirection*(previous.width/2+next.width/2),y=0;
+    if(turn){x=turn>0?previous.width/2:-previous.width/2;y=previous.height+next.width/2}
+    return {x:back.x+x*Math.cos(a)-y*Math.sin(a),y:back.y+x*Math.sin(a)+y*Math.cos(a),angle:(((previous.angle??0)+turn)%360+360)%360,growthDirection};
+  }
+  function snapWash(f,walls,tolerance=182){
+    const back=washBack(f),a=(f.angle??0)*Math.PI/180,nx=-Math.sin(a),ny=Math.cos(a);
+    let best=null;
+    for(const wall of walls){
+      const u=direction(wall);
+      if(Math.abs(u.x*nx+u.y*ny)>1e-6||wall.length<f.width)continue;
+      const offset=Math.max(f.width/2,Math.min(wall.length-f.width/2,(back.x-wall.x)*u.x+(back.y-wall.y)*u.y));
+      const x=wall.x+u.x*offset+nx*wall.thickness/2,y=wall.y+u.y*offset+ny*wall.thickness/2;
+      const distance=Math.hypot(x-back.x,y-back.y);
+      if(distance<=tolerance&&(!best||distance<best.distance))best={x,y,distance};
+    }
+    return best?{x:f.x+best.x-back.x,y:f.y+best.y-back.y,target:best}:
+      {x:Math.round(f.x/91)*91,y:Math.round(f.y/91)*91,target:null};
+  }
+  function snapKitchen(f,walls,tolerance=182){
+    const back=washBack(f),a=(f.angle??0)*Math.PI/180,u={x:Math.cos(a),y:Math.sin(a)},n={x:-Math.sin(a),y:Math.cos(a)};
+    const edges=[{p:back,n,length:f.width}];
+    if(f.kitchenKind==='corner'){
+      const sign=f.cornerSide==='left'?-1:1;
+      edges.push({p:{x:back.x+u.x*sign*f.width/2+n.x*f.height/2,y:back.y+u.y*sign*f.width/2+n.y*f.height/2},n:{x:-sign*u.x,y:-sign*u.y},length:f.height});
+    }
+    const choices=edges.map(edge=>[null,...walls.flatMap(wall=>{
+      const tangent=direction(wall);
+      if(Math.abs(tangent.x*edge.n.x+tangent.y*edge.n.y)>1e-6)return [];
+      const delta=wall.thickness/2-((edge.p.x-wall.x)*edge.n.x+(edge.p.y-wall.y)*edge.n.y);
+      return Math.abs(delta)<=tolerance?[{edge,wall,tangent,dx:delta*edge.n.x,dy:delta*edge.n.y}]:[];
+    })]);
+    let best={x:f.x,y:f.y,target:null,count:0,distance:Infinity};
+    for(const first of choices[0])for(const second of choices[1]??[null]){
+      const active=[first,second].filter(Boolean);if(!active.length)continue;
+      const dx=active.reduce((v,c)=>v+c.dx,0),dy=active.reduce((v,c)=>v+c.dy,0);
+      if(active.some(c=>{
+        const along=(c.edge.p.x+dx-c.wall.x)*c.tangent.x+(c.edge.p.y+dy-c.wall.y)*c.tangent.y;
+        return along<c.edge.length/2-1e-6||along>c.wall.length-c.edge.length/2+1e-6;
+      }))continue;
+      const distance=Math.hypot(dx,dy);
+      if(active.length>best.count||(active.length===best.count&&distance<best.distance))
+        best={x:f.x+dx,y:f.y+dy,target:{x:back.x+dx,y:back.y+dy},count:active.length,distance};
+    }
+    return {x:best.x,y:best.y,target:best.target};
+  }
+  function snapToilet(f){
+    const dx=f.origin==='center'?0:f.width/2,dy=f.origin==='center'?0:f.height/2;
+    const center=v=>Math.round((v-455)/910)*910+455;
+    return {x:center(f.x+dx)-dx,y:center(f.y+dy)-dy};
+  }
+  function bath(f){
+    const thickness=f.wallThickness??140;
+    if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
+    const x=thickness/2,y=thickness/2,width=f.width-thickness,height=f.height-thickness;
+    return {x,y,width,height,tub:{x,y,width,height:height*.45}};
+  }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
     const walls=input.walls??input.objects?.filter(o=>o.type==='wall');
@@ -93,10 +157,12 @@
       const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
+      if(o.type==='bath')bath(o);
+      if(o.type==='kitchen'&&o.kitchenKind!==undefined&&!['counter','sink','stove','corner','combined'].includes(o.kitchenKind))throw Error('Invalid kitchen kind');
       return o;
     })};
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

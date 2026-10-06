@@ -42,7 +42,11 @@
     <button onclick="newWall()">＋ 壁</button>
     <button onclick="addFixture('toilet')">＋ トイレ</button>
     <button onclick="addFixture('bath')">＋ ユニットバス</button>
-    <button onclick="addFixture('kitchen')">＋ キッチン</button>
+    <h3>キッチン（組み合わせ）</h3>
+    <button onclick="addKitchen('counter')">＋ 作業台</button>
+    <button onclick="addKitchen('sink')">＋ シンク台</button>
+    <button onclick="addKitchen('stove')">＋ コンロ台</button>
+    <button onclick="addKitchen('corner')">＋ コーナー</button>
     <button onclick="addFixture('wash')">＋ 洗面台</button>
     <button onclick="addFixture('washer')">＋ 洗濯機</button>
     <button onclick="addFixture('door')">＋ ドア</button>
@@ -119,15 +123,30 @@ function newWall(){
   data.walls.push(n); selected=n; render();
 }
 function addFixture(type){
+  if(type==='kitchen'){addKitchen('counter');return}
   const defs={
-    toilet:[650,380,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
-    wash:[750,600,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
+    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
     window:[1650,140,"窓"], fixedWindow:[1650,140,"固定窓"], stairs:[910,2730,"階段"], landing:[910,910,"踊り場"]
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(type==='toilet')n.origin='center';
+  if(type==='wash'){
+    n.origin='backCenter';
+    if(selected?.type==='wall'){
+      const a=(selected.angle??0)*Math.PI/180;
+      n.angle=selected.angle??0;n.width=Math.min(n.width,selected.length);
+      n.x=selected.x+Math.cos(a)*selected.length/2-Math.sin(a)*selected.thickness/2;
+      n.y=selected.y+Math.sin(a)*selected.length/2+Math.cos(a)*selected.thickness/2;
+    }
+  }
+  if(type==='bath'){
+    n.wallThickness=selected?.type==='wall'?selected.thickness:140;
+    if(n.wallThickness>=Math.min(n.width,n.height)){alert('浴室の寸法より壁厚が大きいため追加できません。');return}
+  }
   if(isOpening(n)){
     n.centerline=true;
     if(selected?.type==='wall'){
@@ -144,6 +163,88 @@ function addFixture(type){
   data.fixtures.push(n);selected=n;render();
 }
 function isWindow(f){return f.type==='window'||f.type==='fixedWindow'}
+function addKitchen(kind,turn=0){
+  const n={id:nextId('f'),type:'kitchen',kitchenKind:kind,origin:'backCenter',x:1365,y:1365,width:kind==='corner'?600:750,height:600,angle:0,label:'キッチン'};
+  if(selected?.type==='kitchen'){
+    const placement=WallModel.nextKitchen(selected,n,turn);
+    Object.assign(n,placement);
+  }else if(selected?.type==='wall'){
+    const a=(selected.angle??0)*Math.PI/180;
+    n.angle=selected.angle??0;n.width=Math.min(n.width,selected.length);
+    n.x=selected.x+Math.cos(a)*selected.length/2-Math.sin(a)*selected.thickness/2;
+    n.y=selected.y+Math.sin(a)*selected.length/2+Math.cos(a)*selected.thickness/2;
+  }
+  data.fixtures.push(n);selected=n;render();
+}
+function drawKitchen(g,f){
+  const w=px(f.width),h=px(f.height),kind=f.kitchenKind??'combined';
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  shape('rect',{x:-w/2,y:0,width:w,height:h,fill:'#fff',stroke:'#333','stroke-width':1});
+  shape('path',{d:`M${-w/2} ${h*.06}H${w/2}`,stroke:'#888','stroke-width':.7});
+  function sink(cx,span){
+    shape('rect',{x:cx-span*.38,y:h*.22,width:span*.76,height:h*.63,rx:Math.min(span,h)*.07,fill:'#eef6fa',stroke:'#333','stroke-width':1});
+    shape('circle',{cx,cy:h*.59,r:Math.min(span,h)*.025,fill:'#fff',stroke:'#555','stroke-width':.7});
+    shape('path',{d:`M${cx} ${h*.12}V${h*.32}`,stroke:'#333','stroke-width':2});
+  }
+  function stove(cx,span){
+    shape('rect',{x:cx-span*.42,y:h*.16,width:span*.84,height:h*.71,fill:'#eee',stroke:'#333','stroke-width':1});
+    for(const [dx,dy,size] of [[-.22,.62,.12],[.22,.62,.12],[0,.34,.09]]){
+      shape('circle',{cx:cx+span*dx,cy:h*dy,r:Math.min(span,h)*size,fill:'#fff',stroke:'#333','stroke-width':1});
+    }
+  }
+  if(kind==='sink')sink(0,w);
+  if(kind==='stove')stove(0,w);
+  if(kind==='combined'){sink(-w*.25,w*.4);stove(w*.27,w*.33)}
+  if(kind==='corner'){
+    const side=f.cornerSide==='left'?-1:1;
+    shape('path',{d:`M${-side*w/2} 0H${side*w/2}V${h}`,fill:'none',stroke:'#486477','stroke-width':3});
+  }
+}
+function drawWash(g,f){
+  const w=px(f.width),h=px(f.height);
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  shape('rect',{x:-w/2,y:0,width:w,height:h,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('rect',{x:-w/2,y:0,width:w,height:h*.18,fill:'#e6e6e6',stroke:'#333','stroke-width':1});
+  shape('path',{d:`M${-w*.4} ${h*.07}H${w*.4}`,stroke:'#666','stroke-width':1});
+  shape('ellipse',{cx:0,cy:h*.61,rx:w*.37,ry:h*.29,fill:'#eef6fa',stroke:'#555','stroke-width':1});
+  shape('circle',{cx:0,cy:h*.66,r:Math.min(w,h)*.025,fill:'#fff',stroke:'#555','stroke-width':.7});
+  shape('path',{d:`M0 ${h*.22}V${h*.4}`,stroke:'#333','stroke-width':2.5});
+}
+function drawToilet(g,f){
+  const w=px(f.width),h=px(f.height);
+  function shape(tag,attrs){
+    const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+    g.appendChild(node);
+  }
+  // Tank is at the back (top at 0 degrees); bowl points downward.
+  shape('ellipse',{cx:w/2,cy:h*.61,rx:w*.46,ry:h*.39,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('ellipse',{cx:w/2,cy:h*.61,rx:w*.32,ry:h*.28,fill:'#f2f7fa',stroke:'#555','stroke-width':.8});
+  shape('rect',{x:0,y:0,width:w,height:h*.25,rx:Math.min(w,h)*.06,fill:'#fff',stroke:'#333','stroke-width':1.2});
+  shape('circle',{cx:w*.8,cy:h*.12,r:Math.min(w,h)*.035,fill:'#fff',stroke:'#555','stroke-width':.7});
+}
+function drawBath(g,f){
+  const room=WallModel.bath(f),tub=room.tub;
+  function rect(box,attrs){
+    const n=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    for(const key of ['x','y','width','height'])n.setAttribute(key,px(box[key]));
+    for(const [key,value] of Object.entries(attrs))n.setAttribute(key,value);
+    g.appendChild(n);
+  }
+  rect(room,{fill:'#fff',stroke:'#333','stroke-width':1});
+  rect(tub,{fill:'#fff',stroke:'#333','stroke-width':1.2});
+  const rim=Math.min(tub.width,tub.height)*.08;
+  rect({x:tub.x+rim,y:tub.y+rim,width:tub.width-2*rim,height:tub.height-2*rim},
+    {fill:'#eef6fa',stroke:'#555','stroke-width':.8,rx:px(Math.min(tub.width,tub.height)*.18)});
+}
 function drawStairs(g,f){
   const s=WallModel.stairs(f),x=px(s.x),y=px(s.y),w=px(s.width),h=px(s.height);
   function shape(tag,attrs){
@@ -286,8 +387,23 @@ function render(){
     }
     objects.appendChild(g);
   }
-  for(const f of data.fixtures){
+  // Draw bathroom floors before doors and other fixtures, independent of creation order.
+  const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
+  for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(f.type==='wash'||f.type==='kitchen'){
+      const back=WallModel.washBack(f);
+      g.setAttribute('transform',`translate(${px(back.x)},${px(back.y)}) rotate(${f.angle||0})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      if(f.type==='kitchen')drawKitchen(g,f);else drawWash(g,f);
+      objects.appendChild(g);continue;
+    }
+    if(f.type==='toilet'){
+      const cx=f.x+(f.origin==='center'?0:f.width/2),cy=f.y+(f.origin==='center'?0:f.height/2);
+      g.setAttribute('transform',`translate(${px(cx)},${px(cy)}) rotate(${f.angle||0}) translate(${-px(f.width/2)},${-px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      drawToilet(g,f);objects.appendChild(g);continue;
+    }
     if(isOpening(f)){
       // Retain the position of older windows whose origin was the bounding-box corner.
       g.setAttribute('transform',f.centerline?
@@ -300,6 +416,7 @@ function render(){
     g.setAttribute("transform",`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
     g.dataset.id=f.id; g.addEventListener("pointerdown", e=>startDrag(e,f));
     if(['stairs','landing','turnStairs'].includes(f.type)){drawStairs(g,f);objects.appendChild(g);continue}
+    if(f.type==='bath'){drawBath(g,f);objects.appendChild(g);continue}
     const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
     r.setAttribute("width",px(f.width));r.setAttribute("height",px(f.height));
     r.setAttribute("fill","#fff");r.setAttribute("stroke","#333");r.setAttribute("stroke-width","2");
@@ -336,6 +453,9 @@ function dragMove(e){
   if(!dragState)return;
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
+    d.obj.type==='kitchen'?WallModel.snapKitchen({...d.obj,x,y},data.walls):
+    d.obj.type==='wash'?WallModel.snapWash({...d.obj,x,y},data.walls):
     {x:Math.round(x/91)*91,y:Math.round(y/91)*91};
   d.obj.x=position.x;d.obj.y=position.y;snapTarget=position.target;render();
 }
@@ -379,6 +499,27 @@ function showProps(){
       </div>
       <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='kitchen'?`
+        <label>キッチン部品</label><select id="pkitchen">${[['counter','作業台'],['sink','シンク台'],['stove','コンロ台'],['corner','コーナー'],['combined','一体型（シンク＋コンロ）']].map(([value,label])=>`<option value="${value}" ${(selected.kitchenKind??'combined')===value?'selected':''}>${label}</option>`).join('')}</select>
+        <label>コーナーの壁側（角度0°基準）</label><select id="pcornerSide"><option value="right" ${selected.cornerSide!=='left'?'selected':''}>背面（上）＋右側</option><option value="left" ${selected.cornerSide==='left'?'selected':''}>背面（上）＋左側</option></select>
+        <p class="hint">コーナーの太い青灰色の2辺が壁側です。設定は回転に追従します。ドラッグは自由配置で、壁に近いときだけ壁面へ吸着します。壁に沿う方向も自由に動かせます。</p>
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        ${selected.kitchenKind==='corner'?'<button onclick="addKitchen(\'counter\',90)">コーナーから右回りに作業台を追加</button><button onclick="addKitchen(\'counter\',-90)">コーナーから左回りに作業台を追加</button>':''}
+        <p class="hint">部品を選んで左のキッチン部品ボタンを押すと、右隣（回転前基準）に隙間なく追加します。L字はコーナーを追加してから、曲がる側に作業台を追加し、種類を変更できます。変更した入力値は先に「値を反映」してください。追加後の部品は個別に移動・回転できます。</p>
+      `:''}
+      ${selected.type==='wash'?`
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">灰色の帯が棚・鏡の背面、楕円が洗面ボウルです。0°では背面が上です。壁と平行に回転して近づけると、背面が壁面へ吸着します（182mm以内）。${selected.origin==='backCenter'?'X/Yは背面中央で、回転の中心です。':'旧データの位置と回転中心を維持します。'}</p>
+      `:''}
+      ${selected.type==='toilet'?`
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">ドラッグすると便器全体の中心が910mmのマスの中心に吸着します。0°ではタンクが上、便器の正面が下です。${selected.origin==='center'?'X/Yは中心位置です。':'旧データのX/Yは回転前の外形左上です。'}数値入力・矢印キーで微調整できます。</p>
+      `:''}
+      ${selected.type==='bath'?`
+        <label>周囲の壁厚 (mm)</label><input id="pbathwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+        <p class="hint">幅・高さは壁芯間寸法です。四辺を壁厚の半分ずつ内側へ寄せます。バスタブは0°で上、90°で右、180°で下、270°で左になります。浴室全体が回転します。</p>
+      `:''}
       ${selected.type==='turnStairs'?`
         <label>周囲の壁厚 (mm)</label><input id="pstwall" type="number" min="0" value="${selected.wallThickness??140}">
         <label>段数</label><input id="psteps" type="number" min="1" max="1000" step="1" value="${selected.steps??3}">
@@ -432,6 +573,11 @@ function applyProps(){
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
   }
+  if(selected.type==='bath'){
+    const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pbathwall').value};
+    try{WallModel.bath(next)}catch{alert('壁厚は0以上かつ浴室の幅・高さ未満で入力してください。');return}
+    selected.wallThickness=next.wallThickness;
+  }
   if(['stairs','landing','turnStairs'].includes(selected.type)){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pstwall').value,connections:['top','bottom','left','right'].filter(edge=>q('pconnect-'+edge)?.checked)};
     if(selected.type==='stairs'){next.steps=+q('psteps').value;next.upDirection=q('pup').value}
@@ -449,6 +595,7 @@ function applyProps(){
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
     selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
     }
