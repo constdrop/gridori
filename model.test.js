@@ -347,6 +347,57 @@ test('washstand back snaps to wall faces in four orientations, without crossing 
   const legacy=M.washBack({x:100,y:200,width:750,height:600,angle:90});
   near(legacy.x,775);near(legacy.y,500);
 });
+test('kitchen modules form straight and mirrored L layouts, show equipment and round-trip',()=>{
+  const {run,nodes}=app();
+  run('addKitchen("sink");addKitchen("counter");addKitchen("stove");addKitchen("corner")');
+  assert.equal(run('data.fixtures[1].x-data.fixtures[0].x'),750);
+  assert.equal(run('data.fixtures[2].x-data.fixtures[1].x'),750);
+  assert.equal(run('data.fixtures[3].x-data.fixtures[2].x'),675);
+  const sink=nodes.get('objects').children[2],stove=nodes.get('objects').children[4];
+  assert.equal(sink.children.length,5);assert.equal(stove.children.length,6);
+  assert.equal(stove.children[3].attrs.fill,'#fff');
+  run('addKitchen("counter",90)');
+  assert.equal(run('selected.angle'),90);
+  assert.equal(run('selected.x-data.fixtures[3].x'),300);
+  assert.equal(run('selected.y-data.fixtures[3].y'),975);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures[0].kitchenKind'),'sink');
+  assert.equal(run('data.fixtures[2].kitchenKind'),'stove');
+  for(const angle of [0,90,180,270])for(const turn of [-90,90]){
+    const prev={origin:'backCenter',x:0,y:0,width:650,height:650,angle};
+    const next=M.nextKitchen(prev,{width:900,height:650},turn);
+    const a=angle*Math.PI/180;
+    near(next.x*Math.cos(a)+next.y*Math.sin(a),turn>0?325:-325);
+    near(-next.x*Math.sin(a)+next.y*Math.cos(a)-450,650); // branch begins at corner front edge
+    assert.equal(next.angle,(angle+turn+360)%360);
+  }
+  run('selected=data.fixtures[4]');
+  for(const [id,value] of Object.entries({pxx:'0',pyy:'0',pww:'900',phh:'650',pang:'90',plabel:'キッチン',pkitchen:'sink'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.kitchenKind'),'sink');
+  run('delete selected.kitchenKind;delete selected.origin;render()');
+  assert.equal(nodes.get('objects').children[6].children.length,9); // legacy combined unit
+});
+test('kitchen dragging is free except normal-to-wall snaps, and corners snap both marked sides',()=>{
+  const f={type:'kitchen',kitchenKind:'counter',origin:'backCenter',x:617.3,y:123.4,width:600,height:600,angle:0};
+  assert.deepEqual(M.snapKitchen(f,[]),{x:617.3,y:123.4,target:null});
+  const top={id:'top',x:-2000,y:0,length:4000,thickness:200,angle:0};
+  const single=M.snapKitchen(f,[top]);near(single.x,617.3);near(single.y,100);
+  assert.equal(M.snapKitchen({...f,y:500},[top]).y,500);
+  for(const side of ['left','right'])for(const angle of [0,90,180,270]){
+    const sign=side==='left'?-1:1,a=angle*Math.PI/180;
+    const rot=(x,y)=>({x:x*Math.cos(a)-y*Math.sin(a),y:x*Math.sin(a)+y*Math.cos(a)});
+    const sideWall={id:'side',x:sign*1000,y:0,length:2000,thickness:200,angle:90};
+    const walls=[top,sideWall].map(w=>({...w,...rot(w.x,w.y),angle:w.angle+angle}));
+    const result=M.snapKitchen({...f,...rot(sign*617.3,123.4),angle,kitchenKind:'corner',cornerSide:side},walls);
+    const expected=rot(sign*600,100);near(result.x,expected.x);near(result.y,expected.y);
+  }
+  const {run,nodes}=app();run('addKitchen("corner")');
+  assert.equal(nodes.get('objects').children[2].children[2].attrs.d,'M-30 0H30V60');
+  run('selected.cornerSide="left";render()');
+  assert.equal(nodes.get('objects').children[2].children[2].attrs.d,'M30 0H-30V60');
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures[0].cornerSide'),'left');
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
