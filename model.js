@@ -136,6 +136,19 @@
     const x=thickness/2,y=thickness/2,width=f.width-thickness,height=f.height-thickness;
     return {x,y,width,height,tub:{x,y,width,height:height*.45}};
   }
+  function dimension(d,walls){
+    const a=walls.find(w=>w.id===d.wallA),b=walls.find(w=>w.id===d.wallB);
+    if(!a||!b||a===b)return null;
+    const u=direction(a),v=direction(b);
+    if(Math.abs(u.x*v.y-u.y*v.x)>1e-6)return null;
+    const signed=(b.x-a.x)*(-u.y)+(b.y-a.y)*u.x;
+    const sign=signed<0?-1:1,n={x:-u.y*sign,y:u.x*sign},distance=Math.abs(signed);
+    const outer=d.kind==='outer',start=outer?-a.thickness/2:a.thickness/2;
+    const end=distance+(outer?b.thickness/2:-b.thickness/2);
+    if(end<start)return null;
+    const point=t=>({x:a.x+u.x*d.offset+n.x*t,y:a.y+u.y*d.offset+n.y*t});
+    return {start:point(start),end:point(end),value:end-start,u,n};
+  }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
     const walls=input.walls??input.objects?.filter(o=>o.type==='wall');
@@ -148,7 +161,7 @@
       for(const k of fields)if(!Number.isFinite(o[k]))throw Error('Invalid '+k);
       return o;
     }
-    return {version:3,units:'mm',grid:{major:910,minor:455},walls:walls.map(w=>{
+    const result={version:3,units:'mm',grid:{major:910,minor:455},walls:walls.map(w=>{
       // Legacy width is the nominal length; x/y already denoted the reference point.
       const o=check({id:w.id,type:'wall',x:w.x,y:w.y,length:w.length??w.width,angle:w.angle??0,thickness:w.thickness??140},['x','y','length','angle','thickness']);
       if(o.length<=0||o.thickness<=0)throw Error('Invalid wall size');
@@ -163,8 +176,17 @@
       if(o.type==='kitchen'&&o.kitchenKind!==undefined&&!['counter','sink','stove','corner','combined'].includes(o.kitchenKind))throw Error('Invalid kitchen kind');
       return o;
     })};
+    if(input.dimensions!==undefined){
+      if(!Array.isArray(input.dimensions))throw Error('Invalid dimensions');
+      result.dimensions=input.dimensions.map(d=>{
+        if(!d||!['inner','outer'].includes(d.kind)||!Number.isFinite(d.offset)||d.wallA===d.wallB||
+          !result.walls.some(w=>w.id===d.wallA)||!result.walls.some(w=>w.id===d.wallB))throw Error('Invalid dimension');
+        return {wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset};
+      });
+    }
+    return result;
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

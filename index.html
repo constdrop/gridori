@@ -105,6 +105,8 @@
   <aside class="right">
     <h3>選択中の部品</h3>
     <div id="properties" class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>
+    <h3>寸法線</h3>
+    <div id="dimensions"></div>
   </aside>
 </main>
 
@@ -375,15 +377,6 @@ function render(){
     r.setAttribute("fill",w.wallKind==='railing'?'#777':'#444');
     g.appendChild(r);
 
-    // Show the nominal wall length and the actual drawn length separately.
-    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
-    t.setAttribute("x",px(w.length/2));
-    t.setAttribute("y",-half-8);
-    t.setAttribute("text-anchor","middle");
-    t.setAttribute("font-size","11");
-    t.textContent=`設定長 ${w.length} mm / 表示長 ${w.length+w.thickness} mm`;
-    g.appendChild(t);
-
     for(const x of [0,w.length]){
       const dot=document.createElementNS("http://www.w3.org/2000/svg","circle");
       dot.setAttribute("cx",px(x));dot.setAttribute("cy",0);dot.setAttribute("r",3);
@@ -442,7 +435,51 @@ function render(){
     marker.setAttribute("r",6);marker.setAttribute("fill","none");marker.setAttribute("stroke","#e07800");
     marker.setAttribute("stroke-width",2);marker.style.pointerEvents="none";objects.appendChild(marker);
   }
+  renderDimensions();
   updateSelection();
+}
+function addDimension(kind){
+  if(selected?.type!=='wall')return;
+  const wallB=document.getElementById('pdimwall').value;
+  const d={wallA:selected.id,wallB,kind,offset:kind==='outer'?-455:selected.length/2};
+  if(!WallModel.dimension(d,data.walls)){alert('異なる平行な壁を選択してください。内寸は壁同士が重ならない場合に追加できます。');return}
+  (data.dimensions??=[]).push(d);render();
+}
+function editDimension(index,value){
+  if(value.trim()===''||!Number.isFinite(Number(value))){alert('寸法線の位置を数値で入力してください。');render();return}
+  data.dimensions[index].offset=Number(value);render();
+}
+function deleteDimension(index){data.dimensions.splice(index,1);render()}
+function renderDimensions(){
+  const rows=[];
+  for(const [index,d] of (data.dimensions??[]).entries()){
+    const measured=WallModel.dimension(d,data.walls),name=d.kind==='outer'?'外寸':'内寸';
+    const label=measured?`${name} ${Number(measured.value.toFixed(2))} mm`:`${name}：測定不可（壁の平行・重なりを確認）`;
+    rows.push(`<p class="hint">${esc(d.wallA)} → ${esc(d.wallB)}：${label}</p><label>寸法線の位置（最初の壁の始点から mm）</label><input type="number" value="${d.offset}" onchange="editDimension(${index},this.value)"><button onclick="deleteDimension(${index})">この寸法線を削除</button>`);
+    if(!measured)continue;
+    const {start,end,u,n}=measured;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.style.pointerEvents='none';
+    function shape(tag,attrs){
+      const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+      for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);
+      g.appendChild(node);return node;
+    }
+    const line=(a,b,color='#555')=>shape('line',{x1:px(a.x),y1:px(a.y),x2:px(b.x),y2:px(b.y),stroke:color,'stroke-width':.8});
+    line(start,end);
+    for(const p of [start,end])line({x:p.x-u.x*60,y:p.y-u.y*60},{x:p.x+u.x*60,y:p.y+u.y*60});
+    // Extension lines originate at the closest point along each measured wall face.
+    for(const [wallId,p] of [[d.wallA,start],[d.wallB,end]]){
+      const wall=data.walls.find(w=>w.id===wallId),a=wall.angle*Math.PI/180,v={x:Math.cos(a),y:Math.sin(a)};
+      const along=(p.x-wall.x)*v.x+(p.y-wall.y)*v.y,clamped=Math.max(0,Math.min(wall.length,along));
+      line({x:p.x+(clamped-along)*v.x,y:p.y+(clamped-along)*v.y},p,'#aaa');
+    }
+    const x=px((start.x+end.x)/2),y=px((start.y+end.y)/2);
+    let angle=Math.atan2(n.y,n.x)*180/Math.PI;if(angle>90)angle-=180;if(angle<-90)angle+=180;
+    const text=shape('text',{x,y:y-5,transform:`rotate(${angle} ${x} ${y})`,'text-anchor':'middle','font-size':11,fill:'#333',stroke:'#fff','stroke-width':3,'paint-order':'stroke'});
+    text.textContent=label;objects.appendChild(g);
+  }
+  document.getElementById('dimensions').innerHTML=rows.join('')||'<p class="hint">壁を選択し、測定先の壁を指定して内寸・外寸を追加できます。</p>';
 }
 let dragState=null, snapTarget=null;
 function svgPoint(e){ const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse()); return {x:mm(p.x),y:mm(p.y)}; }
@@ -482,6 +519,7 @@ function showProps(){
   if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
   const isWall=selected.type==="wall";
   p.innerHTML=`
+    ${isWall?`<label>壁ID</label><input value="${esc(selected.id)}" readonly>`:''}
     <label>種類</label><input value="${esc(selected.type)}" disabled>
     <div class="row">
       <div><label>X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
@@ -489,6 +527,8 @@ function showProps(){
     </div>
     ${isWall?`
       <label>壁の種類</label><select id="pwallkind"><option value="normal" ${selected.wallKind!=='railing'?'selected':''}>壁</option><option value="railing" ${selected.wallKind==='railing'?'selected':''}>手すり壁</option></select>
+      <label>寸法の測定先（平行な壁）</label><select id="pdimwall">${data.walls.filter(w=>w.id!==selected.id).map(w=>`<option value="${esc(w.id)}">${esc(w.id)}：X=${w.x} Y=${w.y} ／ ${w.angle}°</option>`).join('')}</select>
+      <div class="row"><button onclick="addDimension('inner')">内寸を追加</button><button onclick="addDimension('outer')">外寸を追加</button></div>
       <label>設定長・壁芯間 (mm)</label><input id="plen" type="number" value="${selected.length}">
       <div class="row">
         <div><label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}" step="1"></div>
@@ -627,6 +667,7 @@ function rotateSelected(delta){
 }
 function deleteSelected(){
   if(!selected)return;
+  if(data.dimensions)data.dimensions=data.dimensions.filter(d=>d.wallA!==selected.id&&d.wallB!==selected.id);
   data.walls=data.walls.filter(x=>x!==selected);data.fixtures=data.fixtures.filter(x=>x!==selected);
   selected=null;render();
 }
