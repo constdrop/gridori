@@ -29,10 +29,25 @@
   .legend{font-size:11px;line-height:1.6}
   .kbd{font-family:monospace;background:#eee;border:1px solid #ccc;border-radius:3px;padding:1px 4px}
   .empty{color:#777;font-size:12px;line-height:1.6}
+  .app-menu{position:relative;margin-left:auto;color:#222;z-index:10}
+  .app-menu summary{cursor:pointer;color:#fff;padding:8px;list-style:none;border:1px solid #777;border-radius:4px}
+  .app-menu summary::-webkit-details-marker{display:none}
+  .menu-panel{position:absolute;right:0;top:100%;width:280px;max-height:80vh;overflow:auto;background:#fff;border:1px solid #bbb;border-radius:6px;padding:12px;box-shadow:0 4px 16px #0003}
+  .view-tools{position:sticky;top:0;left:0;z-index:2;display:flex;gap:6px;padding:6px 12px;background:#eee}
+  .view-tools button{width:auto}
+  dialog{width:min(640px,90vw);max-height:85vh;overflow:auto;border:1px solid #aaa;border-radius:8px;padding:24px;color:#222}
+  dialog::backdrop{background:#0006}
+  dialog h2{font-size:20px;margin-top:0}
+  dialog p,dialog li{line-height:1.7;font-size:14px}
+  dialog table{border-collapse:collapse;width:100%;font-size:14px}
+  dialog th,dialog td{padding:6px;border-bottom:1px solid #ddd;text-align:left}
+  dialog .close-dialog{width:auto;float:right;margin:0 0 12px 12px}
+  :focus-visible{outline:2px solid #1976d2;outline-offset:2px}
   @page{size:A4 landscape;margin:10mm}
   @media print{
     html,body{margin:0;padding:0;background:#fff}
-    header,aside,.status{display:none!important}
+    header,aside,.status,.view-tools,dialog{display:none!important}
+    dialog::backdrop{display:none}
     main{display:block;height:auto}
     .canvas{position:static;overflow:visible;background:#fff}
     #svg{
@@ -49,6 +64,19 @@
 <header title="「グリどり」は、壁をグリッドに配置することで間取りを作図する、ブラウザで動作する2Dのグリッド間取りエディタです。&#10;日本の家屋で使われる910mmモジュールを基本とし、壁・建具・住宅設備を配置して平面図を作成できます。">
   <strong>グリどり</strong>
   <span>グリッド間取りエディタ — プロトタイプ</span>
+  <details class="app-menu" id="app-menu" title="">
+    <summary id="menu-toggle">☰ メニュー</summary>
+    <nav class="menu-panel" aria-label="ファイルとヘルプ">
+      <button onclick="closeMenu();saveJSON()">JSON保存</button>
+      <p class="hint">自動保存はありません。終了・再読み込みの前に保存してください。</p>
+      <button onclick="closeMenu();loadJSON()">JSON読込</button>
+      <p class="hint">読込は現在の図面を置き換えます。必要な図面は先に保存してください。</p>
+      <button onclick="closeMenu();window.print()">印刷 / PDF</button>
+      <hr>
+      <button onclick="openAppDialog('help-dialog')">使い方</button>
+      <button onclick="openAppDialog('about-dialog')">このアプリについて・ライセンス</button>
+    </nav>
+  </details>
 </header>
 <main>
   <aside>
@@ -73,32 +101,14 @@
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
-    <h3>図面</h3>
-    <button onclick="zoom(1.2)">＋ 拡大</button>
-    <button onclick="zoom(.833333)">－ 縮小</button>
-    <button onclick="fit()">図面を中央へ</button>
-    <button onclick="saveJSON()">JSON保存</button>
-    <button onclick="loadJSON()">JSON読込</button>
-    <button onclick="window.print()">印刷 / PDF</button>
-    <p class="hint">
-      数値入力中心。移動だけドラッグできます。<br>
-      内部座標はmm。丸印は壁芯端点です。<br>
-      壁は455mmグリッドへ吸着。端点を他の壁の端点・途中へ近づけると接続します（182mm以内）。
-    </p>
-    <div class="legend">
-      <b>ショートカット</b><br>
-      <span class="kbd">W</span> 壁追加<br>
-      <span class="kbd">T</span> トイレ<br>
-      <span class="kbd">B</span> 浴室<br>
-      <span class="kbd">K</span> キッチン<br>
-      <span class="kbd">D</span> ドア<br>      <span class="kbd">R</span> 壁を90°回転<br>
-      <span class="kbd">F2</span> 選択部品を編集<br>
-      <span class="kbd">Delete</span> 削除<br>
-      <span class="kbd">矢印</span> 移動（91mm単位）
-    </div>
   </aside>
 
   <section class="canvas" id="canvas">
+    <div class="view-tools" role="group" aria-label="図面の表示">
+      <button onclick="zoom(1.2)">＋ 拡大</button>
+      <button onclick="zoom(.833333)">－ 縮小</button>
+      <button onclick="fit()">表示倍率をリセット</button>
+    </div>
     <svg id="svg" width="1200" height="850" viewBox="0 0 1200 850"
          xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -124,12 +134,63 @@
   </aside>
 </main>
 
+<dialog id="help-dialog" aria-labelledby="help-title">
+  <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
+  <h2 id="help-title">グリどりの使い方</h2>
+  <ol>
+    <li>左側から壁や部品を追加します。起動時のサンプル壁は、不要なら選択して削除できます。</li>
+    <li>図面上でドラッグして配置します。壁は455mmグリッドや他の壁へ吸着します。</li>
+    <li>右側で寸法・座標・角度などを入力し、「値を反映」を押します。</li>
+    <li>メニューの「JSON保存」で図面を保存します。</li>
+  </ol>
+  <p><strong>自動保存はありません。</strong>ページを閉じる・再読み込みする前に保存してください。「JSON読込」は現在の図面を置き換えます。</p>
+  <h3>キーボード操作</h3>
+  <table><thead><tr><th>キー</th><th>操作</th></tr></thead><tbody>
+    <tr><td>W</td><td>壁を追加</td></tr><tr><td>T / B / K / D</td><td>トイレ / 浴室 / キッチン作業台 / ドアを追加</td></tr>
+    <tr><td>R / Shift + R</td><td>選択部品を90° / −90°回転</td></tr><tr><td>矢印キー</td><td>91mm単位で移動</td></tr>
+    <tr><td>Delete</td><td>選択部品を削除</td></tr><tr><td>F2</td><td>座標入力へ移動</td></tr>
+  </tbody></table>
+  <h3>寸法・出力</h3>
+  <p>壁を選び、右側で別の平行な壁を指定すると内寸・外寸を追加できます。壁IDで測定先を確認してください。</p>
+  <p>「印刷 / PDF」は図面だけをA4横に収めます。固定縮尺ではありません。再編集にはPDFではなくJSONを使用します。</p>
+  <p>元に戻す機能はありません。建具・設備は配置後の壁移動に自動追従しません。</p>
+  <p><a href="README.md" target="_blank" rel="noopener">詳しい操作説明（README・別タブ）</a></p>
+</dialog>
+<dialog id="about-dialog" aria-labelledby="about-title">
+  <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
+  <h2 id="about-title">グリどり（gridori）</h2>
+  <p><strong>v0.1.0 — MVP</strong></p>
+  <p>壁をグリッドに配置することで間取りを作図する、ブラウザで動作する2Dのグリッド間取りエディタです。</p>
+  <p>日本の家屋で使われる910mmモジュールを基本とし、壁・建具・住宅設備を配置して平面図を作成できます。</p>
+  <h3>ライセンス</h3>
+  <p>GNU General Public License v3.0（GPL-3.0）</p>
+  <p><a href="LICENSE" target="_blank" rel="noopener">ライセンス全文（別タブ）</a></p>
+  <p><a href="https://github.com/constdrop/gridori" target="_blank" rel="noopener">ソースコード・不具合報告（GitHub・別タブ）</a></p>
+</dialog>
+
 <script src="model.js"></script>
 <script>
 const svg=document.getElementById('svg'), objects=document.getElementById('objects');
 let data={version:3,units:"mm",grid:{major:910,minor:455},walls:[],fixtures:[]};
 let selected=null, scale=1; // 1mm = .1px-ish visually; SVG viewBox stays simple
 let uid=1;
+let activeAppDialog=null;
+function closeMenu(){document.getElementById('app-menu').open=false}
+function openAppDialog(id){
+  closeMenu();
+  activeAppDialog=document.getElementById(id);
+  activeAppDialog.showModal();
+}
+function closeAppDialog(){if(activeAppDialog)activeAppDialog.close()}
+for(const id of ['help-dialog','about-dialog']){
+  document.getElementById(id).addEventListener('close',()=>{
+    activeAppDialog=null;document.getElementById('menu-toggle').focus();
+  });
+}
+document.addEventListener('pointerdown',e=>{
+  const menu=document.getElementById('app-menu');
+  if(menu.open&&!menu.contains(e.target))closeMenu();
+});
 
 function px(mm){return mm*0.1}
 function mm(pxv){return pxv/0.1}
@@ -693,6 +754,12 @@ function fit(){scale=1;svg.style.transform="scale(1)"}
 
 svg.addEventListener("pointerdown",e=>{if(e.button===0){selected=null;render()}});
 document.addEventListener("keydown",e=>{
+  if(activeAppDialog)return;
+  if(document.getElementById('app-menu').open){
+    if(e.key==='Escape'){e.preventDefault();closeMenu();document.getElementById('menu-toggle').focus()}
+    return;
+  }
+  if(document.activeElement.closest?.('header,.view-tools'))return;
   if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
   const k=e.key.toLowerCase();
   if(k==="w")newWall();
@@ -714,7 +781,7 @@ document.addEventListener("keydown",e=>{
 });
 function saveJSON(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="floorplan-910mm.json";a.click();
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="gridori.json";a.click();
 }
 function loadJSON(){
   const input=document.createElement("input");input.type="file";input.accept=".json";
