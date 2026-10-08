@@ -108,6 +108,7 @@
       <button onclick="zoom(1.2)">＋ 拡大</button>
       <button onclick="zoom(.833333)">－ 縮小</button>
       <button onclick="fit()">表示倍率をリセット</button>
+      <button onclick="openPageSettings()">図面サイズ</button>
     </div>
     <svg id="svg" width="1200" height="850" viewBox="0 0 1200 850"
          xmlns="http://www.w3.org/2000/svg">
@@ -120,7 +121,7 @@
           <path d="M91 0H0V91" fill="none" stroke="#ccc"/>
         </pattern>
       </defs>
-      <rect width="1200" height="850" fill="url(#grid910)"/>
+      <rect id="grid-background" width="1200" height="850" fill="url(#grid910)"/>
       <g id="objects"></g>
     </svg>
     <div class="status" id="status">910mmグリッド / 選択なし</div>
@@ -168,6 +169,17 @@
   <p><a href="https://github.com/constdrop/gridori" target="_blank" rel="noopener">ソースコード・不具合報告（GitHub・別タブ）</a></p>
 </dialog>
 
+<dialog id="page-dialog" aria-labelledby="page-title">
+  <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
+  <h2 id="page-title">図面サイズ</h2>
+  <p>図面領域だけを変更します。部品の位置や寸法は変わりません。</p>
+  <div class="row"><div><label for="page-width">幅 (mm)</label><input id="page-width" type="number" min="100" max="200000"></div><div><label for="page-height">高さ (mm)</label><input id="page-height" type="number" min="100" max="200000"></div></div>
+  <div class="row"><div><label for="page-x">左端 X (mm)</label><input id="page-x" type="number"></div><div><label for="page-y">上端 Y (mm)</label><input id="page-y" type="number"></div></div>
+  <p class="hint">幅・高さは100〜200,000mm。負の座標の部品は左端・上端を変更して含められます。印刷ではこの領域全体を用紙に収めます。</p>
+  <button onclick="applyPageSettings()">サイズを反映</button>
+  <button onclick="fitPageToDrawing()">部品・寸法線全体に合わせる（余白455mm）</button>
+  <p id="page-error" role="alert"></p>
+</dialog>
 <script src="model.js"></script>
 <script>
 const svg=document.getElementById('svg'), objects=document.getElementById('objects');
@@ -182,7 +194,7 @@ function openAppDialog(id){
   activeAppDialog.showModal();
 }
 function closeAppDialog(){if(activeAppDialog)activeAppDialog.close()}
-for(const id of ['help-dialog','about-dialog']){
+for(const id of ['help-dialog','about-dialog','page-dialog']){
   document.getElementById(id).addEventListener('close',()=>{
     activeAppDialog=null;document.getElementById('menu-toggle').focus();
   });
@@ -432,6 +444,11 @@ function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
 function render(){
+  const page=WallModel.page(data.page);
+  svg.setAttribute('width',px(page.width));svg.setAttribute('height',px(page.height));
+  svg.setAttribute('viewBox',`${px(page.x)} ${px(page.y)} ${px(page.width)} ${px(page.height)}`);
+  const background=document.getElementById('grid-background');
+  for(const [key,value] of Object.entries(page))background.setAttribute(key,px(value));
   objects.innerHTML="";
   // Normal walls cover railing walls at shared joints, regardless of creation order.
   const wallsInDrawOrder=[...data.walls.filter(w=>w.wallKind==='railing'),...data.walls.filter(w=>w.wallKind!=='railing')];
@@ -779,6 +796,29 @@ document.addEventListener("keydown",e=>{
     render();
   }
 });
+function openPageSettings(){
+  const page=WallModel.page(data.page);
+  for(const key of ['width','height','x','y'])document.getElementById('page-'+key).value=String(page[key]);
+  document.getElementById('page-error').textContent='';openAppDialog('page-dialog');
+}
+function applyPageSettings(){
+  const page={};
+  for(const key of ['width','height','x','y']){
+    const value=document.getElementById('page-'+key).value;
+    page[key]=value.trim()===''?NaN:Number(value);
+  }
+  try{data.page=WallModel.page(page)}catch{document.getElementById('page-error').textContent='座標は有限の数値、幅・高さは100〜200,000mmで入力してください。';return}
+  render();closeAppDialog();
+}
+function fitPageToDrawing(){
+  if(!data.walls.length&&!data.fixtures.length){document.getElementById('page-error').textContent='図面に部品がありません。';return}
+  const box=objects.getBBox(),pad=455;
+  const x=Math.floor(mm(box.x)-pad),y=Math.floor(mm(box.y)-pad);
+  const page={x,y,width:Math.ceil(mm(box.x+box.width)+pad)-x,height:Math.ceil(mm(box.y+box.height)+pad)-y};
+  try{WallModel.page(page)}catch{document.getElementById('page-error').textContent='図面が大きすぎます。幅・高さを200,000mm以内にしてください。';return}
+  for(const key of ['width','height','x','y'])document.getElementById('page-'+key).value=String(page[key]);
+  applyPageSettings();
+}
 function saveJSON(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="gridori.json";a.click();
