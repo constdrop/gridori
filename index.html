@@ -471,7 +471,8 @@ function renderDimensions(){
   for(const [index,d] of (data.dimensions??[]).entries()){
     const measured=WallModel.dimension(d,data.walls),name=d.kind==='outer'?'外寸':'内寸';
     const label=measured?`${name} ${Number(measured.value.toFixed(2))} mm`:`${name}：測定不可（壁の平行・重なりを確認）`;
-    rows.push(`<p class="hint">${esc(d.wallA)} → ${esc(d.wallB)}：${label}</p><label>寸法線の位置（最初の壁の始点から mm）</label><input type="number" value="${d.offset}" onchange="editDimension(${index},this.value)"><button onclick="deleteDimension(${index})">この寸法線を削除</button>`);
+    const inputId=`dimension-offset-${index}`,labelId=`dimension-offset-label-${index}`,summaryId=`dimension-summary-${index}`;
+    rows.push(`<p class="hint" id="${summaryId}">${esc(d.wallA)} → ${esc(d.wallB)}：${label}</p><label id="${labelId}" for="${inputId}">寸法線の位置（最初の壁の始点から mm）</label><input id="${inputId}" aria-labelledby="${summaryId} ${labelId}" type="number" value="${d.offset}" onchange="editDimension(${index},this.value)"><button aria-label="${esc(d.wallA)}から${esc(d.wallB)}の${name}の寸法線を削除" onclick="deleteDimension(${index})">この寸法線を削除</button>`);
     if(!measured)continue;
     const {start,end,u,n}=measured;
     const g=document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -535,7 +536,7 @@ function showProps(){
   if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
   const isWall=selected.type==="wall";
   p.innerHTML=`
-    ${isWall?`<label>壁ID</label><input value="${esc(selected.id)}" readonly>`:''}
+    ${isWall?`<label for="pwallid">壁ID</label><input id="pwallid" value="${esc(selected.id)}" readonly>`:''}
     <label>種類</label><input value="${esc(selected.type)}" disabled>
     <div class="row">
       <div><label>X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
@@ -543,7 +544,7 @@ function showProps(){
     </div>
     ${isWall?`
       <label>壁の種類</label><select id="pwallkind"><option value="normal" ${selected.wallKind!=='railing'?'selected':''}>壁</option><option value="railing" ${selected.wallKind==='railing'?'selected':''}>手すり壁</option></select>
-      <label>寸法の測定先（平行な壁）</label><select id="pdimwall">${data.walls.filter(w=>w.id!==selected.id).map(w=>`<option value="${esc(w.id)}">${esc(w.id)}：X=${w.x} Y=${w.y} ／ ${w.angle}°</option>`).join('')}</select>
+      <label for="pdimwall">寸法の測定先（平行な壁）</label><select id="pdimwall">${data.walls.filter(w=>w.id!==selected.id).map(w=>`<option value="${esc(w.id)}">${esc(w.id)}：X=${w.x} Y=${w.y} ／ ${w.angle}°</option>`).join('')}</select>
       <div class="row"><button onclick="addDimension('inner')">内寸を追加</button><button onclick="addDimension('outer')">外寸を追加</button></div>
       <label>設定長・壁芯間 (mm)</label><input id="plen" type="number" value="${selected.length}">
       <div class="row">

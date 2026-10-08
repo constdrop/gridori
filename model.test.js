@@ -498,6 +498,30 @@ test('dimension UI persists annotations, follows edits, and removes dangling ref
   run('selected=data.walls[1];deleteSelected()');assert.equal(run('data.dimensions.length'),0);
   assert.throws(()=>M.normalize({version:3,walls:[wall()],fixtures:[],dimensions:[{wallA:'w1',wallB:'missing',kind:'inner',offset:0}]}));
 });
+test('dimension fields have distinct accessible names and label associations after deletion',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0]');nodes.set('pdimwall',{value:'w2'});
+  run('addDimension("inner");addDimension("outer")');
+  function names(){
+    const html=nodes.get('dimensions').innerHTML;
+    const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+    assert.equal(new Set(ids).size,ids.length);
+    return [...html.matchAll(/<input id="([^"]+)" aria-labelledby="([^"]+)"/g)].map(([,id,refs])=>{
+      assert.ok(html.includes(`for="${id}"`));
+      return refs.split(' ').map(ref=>{
+        const text=html.match(new RegExp(`<(?:p|label)[^>]*id="${ref}"[^>]*>([^<]+)</`));
+        assert.ok(text,`Missing accessible-name reference: ${ref}`);return text[1];
+      }).join(' ');
+    });
+  }
+  let labels=names();assert.equal(labels.length,2);
+  assert.ok(labels[0].includes('w1 → w2：内寸'));
+  assert.ok(labels[1].includes('w1 → w2：外寸'));
+  assert.ok(labels.every(label=>label.includes('寸法線の位置')));
+  assert.match(nodes.get('properties').innerHTML,/<label for="pdimwall">[^<]+<\/label><select id="pdimwall">/);
+  run('deleteDimension(0)');labels=names();
+  assert.equal(labels.length,1);assert.ok(labels[0].includes('外寸'));
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
