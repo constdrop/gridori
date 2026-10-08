@@ -44,16 +44,62 @@ test('legacy imports, round trip, validation and duplicate IDs',()=>{
 // Exercise the actual application renderer and handlers with a minimal DOM.
 function app(){
   const nodes=new Map();
-  function element(){return {children:[],attrs:{},dataset:{},style:{},classList:{add(){},remove(){}},
-    setAttribute(k,v){this.attrs[k]=v},appendChild(n){this.children.push(n)},addEventListener(){},
+  function element(){return {children:[],attrs:{},dataset:{},style:{},events:{},classList:{add(){},remove(){}},
+    setAttribute(k,v){this.attrs[k]=v},appendChild(n){this.children.push(n)},addEventListener(name,fn){(this.events[name]??=[]).push(fn)},
+    showModal(){this.open=true},close(){this.open=false;for(const fn of this.events.close??[])fn()},focus(){document.activeElement=this},contains(target){return target===this},
     set innerHTML(v){this.children=[];this.html=v},get innerHTML(){return this.html}}}
   const document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)},
-    createElementNS:element,querySelectorAll(){return []},addEventListener(){}};
+    createElementNS:element,querySelectorAll(){return []},events:{},activeElement:{tagName:'BODY'},addEventListener(name,fn){(this.events[name]??=[]).push(fn)}};
   const context=vm.createContext({document,WallModel:M,window:{addEventListener(){},removeEventListener(){}},alert(){}});
+  vm.runInContext(fs.readFileSync('samples/apartment-1dk.js','utf8'),context);
   const script=fs.readFileSync('index.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script,context);
-  return {run:code=>vm.runInContext(code,context),nodes};
+  return {run:code=>vm.runInContext(code,context),nodes,dispatch:(name,event)=>document.events[name].forEach(fn=>fn(event))};
 }
+
+test('menu and modal dialogs suppress drawing shortcuts and restore focus on close',()=>{
+  const {run,nodes,dispatch}=app();
+  const menu=nodes.get('app-menu')??run('document.getElementById("app-menu")');
+  const toggle=run('document.getElementById("menu-toggle")');
+  menu.open=true;
+  dispatch('keydown',{key:'w'});assert.equal(run('data.walls.length'),2);
+  let prevented=false;dispatch('keydown',{key:'Escape',preventDefault(){prevented=true}});
+  assert.equal(menu.open,false);assert.equal(prevented,true);
+  assert.equal(run('document.activeElement'),toggle);
+  for(const id of ['help-dialog','about-dialog']){
+    menu.open=true;run(`openAppDialog('${id}')`);
+    assert.equal(menu.open,false);assert.equal(nodes.get(id).open,true);
+    dispatch('keydown',{key:'w'});assert.equal(run('data.walls.length'),2);
+    run('closeAppDialog()');assert.equal(nodes.get(id).open,false);
+    assert.equal(run('activeAppDialog'),null);assert.equal(run('document.activeElement'),toggle);
+  }
+  menu.open=true;dispatch('pointerdown',{target:{}});assert.equal(menu.open,false);
+});
+test('sample and editable page sizes persist without moving objects and fit drawing bounds',()=>{
+  const {run,nodes}=app();
+  run('globalThis.confirm=()=>false;loadSample()');assert.equal(run('data.walls.length'),2);
+  run('globalThis.confirm=()=>true;loadSample()');
+  const source=JSON.parse(fs.readFileSync('samples/apartment-1dk.json','utf8'));
+  assert.deepEqual(JSON.parse(run('JSON.stringify(data)')),M.normalize(source));
+  assert.equal(nodes.get('svg').attrs.viewBox,'0 0 728 1001');
+  assert.equal(nodes.get('grid-background').attrs.height,1001);
+  assert.ok(source.page.height>8190+800); // entrance door swing fits
+  const objectsBefore=run('JSON.stringify([data.walls,data.fixtures])');
+  run('openPageSettings()');
+  nodes.get('page-width').value='10000';nodes.get('page-height').value='15000';
+  run('applyPageSettings()');assert.equal(nodes.get('svg').attrs.viewBox,'0 0 1000 1500');
+  assert.equal(run('JSON.stringify([data.walls,data.fixtures])'),objectsBefore);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');assert.equal(run('data.page.height'),15000);
+  run('openPageSettings()');nodes.get('page-width').value='';run('applyPageSettings()');assert.equal(run('data.page.width'),10000);
+  nodes.get('objects').getBBox=()=>({x:-100,y:-20,width:700,height:1000});
+  run('fitPageToDrawing()');
+  assert.equal(run('data.page.x'),-1455);assert.equal(run('data.page.y'),-655);
+  assert.equal(run('data.page.width'),7910);assert.equal(run('data.page.height'),10910);
+  assert.equal(run('JSON.stringify([data.walls,data.fixtures])'),objectsBefore);
+  assert.throws(()=>M.page({x:0,y:0,width:0,height:1000}));
+  assert.throws(()=>M.page({x:0,y:0,width:Infinity,height:1000}));
+  run('delete data.page;render()');assert.equal(nodes.get('svg').attrs.viewBox,'0 0 1200 850');
+});
 test('doors inherit wall geometry, support both hinges and swing sides, and survive JSON round trip',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("door")');
