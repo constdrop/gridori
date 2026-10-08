@@ -70,6 +70,7 @@
       <button onclick="closeMenu();saveJSON()">JSON保存</button>
       <p class="hint">自動保存はありません。終了・再読み込みの前に保存してください。</p>
       <button onclick="closeMenu();loadJSON()">JSON読込</button>
+      <button onclick="loadSample()">サンプル図面：アパート1DK</button>
       <p class="hint">読込は現在の図面を置き換えます。必要な図面は先に保存してください。</p>
       <button onclick="closeMenu();window.print()">印刷 / PDF</button>
       <hr>
@@ -181,6 +182,7 @@
   <p id="page-error" role="alert"></p>
 </dialog>
 <script src="model.js"></script>
+<script src="samples/apartment-1dk.js"></script>
 <script>
 const svg=document.getElementById('svg'), objects=document.getElementById('objects');
 let data={version:3,units:"mm",grid:{major:910,minor:455},walls:[],fixtures:[]};
@@ -818,6 +820,10 @@ function fitPageToDrawing(){
   try{WallModel.page(page)}catch{document.getElementById('page-error').textContent='図面が大きすぎます。幅・高さを200,000mm以内にしてください。';return}
   for(const key of ['width','height','x','y'])document.getElementById('page-'+key).value=String(page[key]);
   applyPageSettings();
+}
+function loadSample(){
+  if(!confirm('現在の図面を1DKのサンプルに置き換えます。必要な図面は先にJSON保存してください。読み込みますか？'))return;
+  data=WallModel.normalize(JSON.parse(JSON.stringify(GridoriSample)));selected=null;closeMenu();fit();render();
 }
 function saveJSON(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
