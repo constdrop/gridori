@@ -467,6 +467,61 @@ test('railing walls share wall geometry and editing, persist, and render below n
   const reverse=M.snapWall(wall({x:950,y:950}),[wall({id:'other',wallKind:'railing',x:3640,y:910,angle:90})]);
   near(reverse.x,910);near(reverse.y,910);
 });
+test('wall face dimensions account for thickness, reversed walls and rotations',()=>{
+  for(const angle of [0,90,180,270,35]){
+    const a=angle*Math.PI/180,n={x:-Math.sin(a),y:Math.cos(a)};
+    const walls=[wall({id:'a',x:0,y:0,angle,thickness:140}),wall({id:'b',x:n.x*3640,y:n.y*3640,angle:angle+180,thickness:200})];
+    const d={wallA:'a',wallB:'b',kind:'inner',offset:1000};
+    near(M.dimension(d,walls).value,3470);
+    near(M.dimension({...d,kind:'outer'},walls).value,3810);
+    near(M.dimension({...d,wallA:'b',wallB:'a'},walls).value,3470);
+    walls[1].angle+=30;assert.equal(M.dimension(d,walls),null);
+  }
+  assert.equal(M.dimension({wallA:'a',wallB:'b',kind:'inner',offset:0},[wall({id:'a'}),wall({id:'b'})]),null);
+});
+test('dimension UI persists annotations, follows edits, and removes dangling references',()=>{
+  const {run,nodes}=app();
+  assert.equal(nodes.get('objects').children[0].children.length,3); // body and endpoints, no length label
+  run('selected=data.walls[0]');nodes.set('pdimwall',{value:'w2'});
+  run('addDimension("inner");addDimension("outer")');
+  assert.equal(run('data.dimensions.length'),2);
+  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3500 mm');
+  assert.equal(nodes.get('objects').children.at(-1).children.at(-1).textContent,'外寸 3780 mm');
+  run('editDimension(0,"-910");data.walls[1].y+=455;render()');
+  assert.equal(run('data.dimensions[0].offset'),-910);
+  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3955 mm');
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.dimensions.length'),2);assert.equal(run('data.dimensions[0].offset'),-910);
+  run('data.walls[1].angle=90;render()');
+  assert.ok(nodes.get('dimensions').innerHTML.includes('測定不可'));
+  run('deleteDimension(0)');assert.equal(run('data.dimensions.length'),1);
+  run('selected=data.walls[1];deleteSelected()');assert.equal(run('data.dimensions.length'),0);
+  assert.throws(()=>M.normalize({version:3,walls:[wall()],fixtures:[],dimensions:[{wallA:'w1',wallB:'missing',kind:'inner',offset:0}]}));
+});
+test('dimension fields have distinct accessible names and label associations after deletion',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0]');nodes.set('pdimwall',{value:'w2'});
+  run('addDimension("inner");addDimension("outer")');
+  function names(){
+    const html=nodes.get('dimensions').innerHTML;
+    const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+    assert.equal(new Set(ids).size,ids.length);
+    return [...html.matchAll(/<input id="([^"]+)" aria-labelledby="([^"]+)"/g)].map(([,id,refs])=>{
+      assert.ok(html.includes(`for="${id}"`));
+      return refs.split(' ').map(ref=>{
+        const text=html.match(new RegExp(`<(?:p|label)[^>]*id="${ref}"[^>]*>([^<]+)</`));
+        assert.ok(text,`Missing accessible-name reference: ${ref}`);return text[1];
+      }).join(' ');
+    });
+  }
+  let labels=names();assert.equal(labels.length,2);
+  assert.ok(labels[0].includes('w1 → w2：内寸'));
+  assert.ok(labels[1].includes('w1 → w2：外寸'));
+  assert.ok(labels.every(label=>label.includes('寸法線の位置')));
+  assert.match(nodes.get('properties').innerHTML,/<label for="pdimwall">[^<]+<\/label><select id="pdimwall">/);
+  run('deleteDimension(0)');labels=names();
+  assert.equal(labels.length,1);assert.ok(labels[0].includes('外寸'));
+});
 test('window opening matches selected wall thickness and sash stays on centerline after rotation',()=>{
   const {run,nodes}=app();
   run('selected=data.walls[0];selected.thickness=200;selected.angle=90;addFixture("window")');
