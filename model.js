@@ -149,6 +149,11 @@
     const point=t=>({x:a.x+u.x*d.offset+n.x*t,y:a.y+u.y*d.offset+n.y*t});
     return {start:point(start),end:point(end),value:end-start,u,n};
   }
+  function page(value){
+    const p=value??{x:0,y:0,width:12000,height:8500};
+    if(![p.x,p.y,p.width,p.height].every(Number.isFinite)||p.width<100||p.height<100||p.width>200000||p.height>200000)throw Error('Invalid page');
+    return {x:p.x,y:p.y,width:p.width,height:p.height};
+  }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
     const walls=input.walls??input.objects?.filter(o=>o.type==='wall');
@@ -184,9 +189,10 @@
         return {wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset};
       });
     }
+    if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension};
+  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
