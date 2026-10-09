@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>グリどり（gridori）｜グリッド間取りエディタ</title>
+<title>グリどり（Gridori）｜グリッド間取りエディタ</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <style>
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#222;background:#eee}
   header{height:48px;background:#222;color:#fff;display:flex;align-items:center;padding:0 14px;gap:18px}
-  header strong{font-size:15px}
+  header strong{font-size:15px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .app-logo{display:block;width:40px;height:40px;object-fit:contain}
   header span{font-size:12px;color:#bbb}
   main{display:grid;grid-template-columns:210px 1fr 280px;height:calc(100vh - 48px)}
   aside{background:#fafafa;border-right:1px solid #ccc;padding:12px;overflow:auto}
@@ -62,8 +64,8 @@
 </head>
 <body>
 <header title="「グリどり」は、壁をグリッドに配置することで間取りを作図する、ブラウザで動作する2Dのグリッド間取りエディタです。&#10;日本の家屋で使われる910mmモジュールを基本とし、壁・建具・住宅設備を配置して平面図を作成できます。">
-  <strong>グリどり</strong>
-  <span>グリッド間取りエディタ — プロトタイプ</span>
+  <strong><img class="app-logo" src="logo.png" alt="" width="40" height="40" style="margin: 0 10px;">グリどり</strong>
+  <span>―　グリッド間取りエディタ</span>
   <details class="app-menu" id="app-menu" title="">
     <summary id="menu-toggle">☰ メニュー</summary>
     <nav class="menu-panel" aria-label="ファイルとヘルプ">
