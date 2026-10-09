@@ -195,8 +195,11 @@ let data={version:3,units:"mm",grid:{major:910,minor:455},walls:[],fixtures:[]};
 let selected=null, scale=1; // 1mm = .1px-ish visually; SVG viewBox stays simple
 let uid=1;
 let activeAppDialog=null;
+let appDialogReturnFocus=null;
 function closeMenu(){document.getElementById('app-menu').open=false}
 function openAppDialog(id){
+  const trigger=document.activeElement;
+  appDialogReturnFocus=trigger?.closest?.('.view-tools')?trigger:document.getElementById('menu-toggle');
   closeMenu();
   activeAppDialog=document.getElementById(id);
   activeAppDialog.showModal();
@@ -204,7 +207,9 @@ function openAppDialog(id){
 function closeAppDialog(){if(activeAppDialog)activeAppDialog.close()}
 for(const id of ['help-dialog','about-dialog','page-dialog']){
   document.getElementById(id).addEventListener('close',()=>{
-    activeAppDialog=null;document.getElementById('menu-toggle').focus();
+    const returnFocus=appDialogReturnFocus?.isConnected!==false?appDialogReturnFocus:null;
+    activeAppDialog=null;appDialogReturnFocus=null;
+    (returnFocus??document.getElementById('menu-toggle')).focus();
   });
 }
 document.addEventListener('pointerdown',e=>{

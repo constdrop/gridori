@@ -75,6 +75,27 @@ test('menu and modal dialogs suppress drawing shortcuts and restore focus on clo
   }
   menu.open=true;dispatch('pointerdown',{target:{}});assert.equal(menu.open,false);
 });
+test('page dialog restores its toolbar trigger and falls back when the trigger is unavailable',()=>{
+  const {run,nodes}=app();
+  const trigger=run('document.getElementById("test-page-trigger")');
+  trigger.closest=selector=>selector==='.view-tools'?{}:null;
+  trigger.isConnected=true;
+  const toggle=run('document.getElementById("menu-toggle")');
+  for(const close of ['closeAppDialog()','document.getElementById("page-dialog").close()']){
+    trigger.focus();run('openPageSettings()');
+    assert.equal(run('appDialogReturnFocus'),trigger);
+    run(close); // Both button and native dialog dismissal use the close event.
+    assert.equal(run('document.activeElement'),trigger);
+    assert.equal(run('activeAppDialog'),null);assert.equal(run('appDialogReturnFocus'),null);
+  }
+  trigger.focus();run('openPageSettings()');trigger.isConnected=false;run('closeAppDialog()');
+  assert.equal(run('document.activeElement'),toggle);
+  run('document.activeElement=null;openPageSettings();closeAppDialog()');
+  assert.equal(run('document.activeElement'),toggle);
+  const menuItem=run('document.getElementById("test-help-trigger")');
+  menuItem.focus();run('openAppDialog("help-dialog");closeAppDialog()');
+  assert.equal(run('document.activeElement'),toggle);
+});
 test('sample and editable page sizes persist without moving objects and fit drawing bounds',()=>{
   const {run,nodes}=app();
   run('globalThis.confirm=()=>false;loadSample()');assert.equal(run('data.walls.length'),2);
