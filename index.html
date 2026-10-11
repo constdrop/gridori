@@ -7,12 +7,17 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <style>
   *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#222;background:#eee}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#222;background:#eee;height:100vh;height:100dvh;display:grid;grid-template-rows:48px minmax(0,1fr) auto}
   header{height:48px;background:#222;color:#fff;display:flex;align-items:center;padding:0 14px;gap:18px}
   header strong{font-size:15px;display:flex;align-items:center;gap:8px;flex-shrink:0}
   .app-logo{display:block;width:40px;height:40px;object-fit:contain}
   header span{font-size:12px;color:#bbb}
-  main{display:grid;grid-template-columns:210px 1fr 280px;height:calc(100vh - 48px)}
+  main{display:grid;grid-template-columns:210px minmax(0,1fr) 280px;min-height:0}
+  .ad-area{padding:4px 12px 8px;border-top:1px solid #ccc;background:#fafafa;text-align:center;overflow:hidden}
+  .ad-label{margin:0 0 4px;font-size:10px;line-height:14px;color:#666}
+  .ad-slot{width:min(728px,100%);height:90px;margin:auto;overflow:hidden;background:#f0f0f0;display:grid;place-items:center}
+  .ad-placeholder{font-size:12px;color:#666}
+  @media(max-width:767px){.ad-slot{max-width:320px;height:50px}}
   aside{background:#fafafa;border-right:1px solid #ccc;padding:12px;overflow:auto}
   .right{border-left:1px solid #ccc;border-right:0}
   h3{font-size:13px;margin:8px 0}
@@ -47,8 +52,8 @@
   :focus-visible{outline:2px solid #1976d2;outline-offset:2px}
   @page{size:A4 landscape;margin:10mm}
   @media print{
-    html,body{margin:0;padding:0;background:#fff}
-    header,aside,.status,.view-tools,dialog{display:none!important}
+    html,body{margin:0;padding:0;background:#fff;height:auto;display:block}
+    header,aside,.status,.view-tools,dialog,.ad-area{display:none!important}
     dialog::backdrop{display:none}
     main{display:block;height:auto}
     .canvas{position:static;overflow:visible;background:#fff}
@@ -141,6 +146,14 @@
     <div id="dimensions"></div>
   </aside>
 </main>
+
+<section class="ad-area" aria-label="広告">
+  <p class="ad-label">広告</p>
+  <div class="ad-slot" id="ad-slot">
+    <!-- 広告導入時は、この枠内のプレースホルダーを広告コードに置き換える。 -->
+    <span class="ad-placeholder">広告掲載スペース</span>
+  </div>
+</section>
 
 <dialog id="help-dialog" aria-labelledby="help-title">
   <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
