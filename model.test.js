@@ -57,6 +57,40 @@ function app(){
   return {run:code=>vm.runInContext(code,context),nodes,dispatch:(name,event)=>document.events[name].forEach(fn=>fn(event))};
 }
 
+test('unsaved drawings warn on exit and replacement, and successful JSON downloads clear changes',()=>{
+  const {run,nodes}=app();
+  assert.equal(run('hasUnsavedChanges()'),false);
+  run('select(data.walls[0]);zoom(1.2)');
+  assert.equal(run('hasUnsavedChanges()'),false);
+  run('newWall()');
+  assert.equal(run('hasUnsavedChanges()'),true);
+  assert.match(nodes.get('save-state').textContent,/未保存/);
+  run("globalThis.exitEvent={preventDefault(){this.prevented=true}};warnBeforeUnload(exitEvent)");
+  assert.equal(run('exitEvent.prevented'),true);
+  const before=run('JSON.stringify(data)');
+  run('globalThis.confirm=()=>false;loadSample()');
+  assert.equal(run('JSON.stringify(data)'),before);
+  run(`globalThis.downloads=[];
+    document.createElement=tag=>({click(){if(tag==='a')downloads.push(this.download);else{this.files=[{}];this.onchange()} }});
+    globalThis.FileReader=class{readAsText(){this.result=JSON.stringify(GridoriSample);this.onload()}};
+    loadJSON()`);
+  assert.equal(run('JSON.stringify(data)'),before);
+  run('confirm=()=>true;loadJSON()');
+  assert.equal(run('hasUnsavedChanges()'),false);
+  assert.equal(run('data.walls.length'),run('GridoriSample.walls.length'));
+  run(`newWall();globalThis.Blob=class{};globalThis.URL={createObjectURL(){return 'blob:test'},revokeObjectURL(){}};globalThis.setTimeout=fn=>fn();saveJSON()`);
+  assert.equal(run('downloads[0]'),'gridori.json');
+  assert.equal(run('hasUnsavedChanges()'),false);
+  run('exitEvent={preventDefault(){this.prevented=true}};warnBeforeUnload(exitEvent)');
+  assert.equal(run('exitEvent.prevented'),undefined);
+  run('data.page={x:0,y:0,width:10000,height:10000};render()');
+  assert.equal(run('hasUnsavedChanges()'),true);
+  const edited=run('JSON.stringify(data)');
+  run("FileReader=class{readAsText(){this.result='invalid';this.onload()}};loadJSON()");
+  assert.equal(run('JSON.stringify(data)'),edited);
+  assert.equal(run('hasUnsavedChanges()'),true);
+});
+
 test('menu and modal dialogs suppress drawing shortcuts and restore focus on close',()=>{
   const {run,nodes,dispatch}=app();
   const menu=nodes.get('app-menu')??run('document.getElementById("app-menu")');

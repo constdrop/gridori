@@ -40,8 +40,11 @@
   .app-menu summary{cursor:pointer;color:#fff;padding:8px;list-style:none;border:1px solid #777;border-radius:4px}
   .app-menu summary::-webkit-details-marker{display:none}
   .menu-panel{position:absolute;right:0;top:100%;width:280px;max-height:80vh;overflow:auto;background:#fff;border:1px solid #bbb;border-radius:6px;padding:12px;box-shadow:0 4px 16px #0003}
+  .menu-panel a{display:block;padding:8px;margin:3px 0;color:#222;font-size:13px;border:1px solid #bbb;border-radius:4px;text-decoration:none}
+  .menu-panel a:hover{background:#eee}
   .view-tools{position:sticky;top:0;left:0;z-index:2;display:flex;gap:6px;padding:6px 12px;background:#eee}
   .view-tools button{width:auto}
+  .save-notice{align-self:center;margin-left:auto;font-size:11px;color:#555}
   dialog{width:min(640px,90vw);max-height:85vh;overflow:auto;border:1px solid #aaa;border-radius:8px;padding:24px;color:#222}
   dialog::backdrop{background:#0006}
   dialog h2{font-size:20px;margin-top:0}
@@ -123,6 +126,7 @@
       <button onclick="zoom(.833333)">－ 縮小</button>
       <button onclick="fit()">表示倍率をリセット</button>
       <button onclick="openPageSettings()">図面サイズ</button>
+      <span class="save-notice" id="save-state" role="status"></span>
     </div>
     <svg id="svg" width="1200" height="850" viewBox="0 0 1200 850"
          xmlns="http://www.w3.org/2000/svg">
@@ -185,11 +189,20 @@
   <p><strong>v0.1.0 — MVP</strong></p>
   <p>壁をグリッドに配置することで間取りを作図する、ブラウザで動作する2Dのグリッド間取りエディタです。</p>
   <p>日本の家屋で使われる910mmモジュールを基本とし、壁・建具・住宅設備を配置して平面図を作成できます。</p>
+  <h3>既知の制限</h3>
+  <ul>
+    <li>自動保存・元に戻す機能はありません。図面はメニューの「JSON保存」で保存してください。</li>
+    <li>配置した建具・設備は、後から壁を動かしても自動追従しません。</li>
+    <li>印刷は用紙に合わせて拡大縮小され、固定縮尺ではありません。</li>
+  </ul>
+  <p>不具合の報告には、バージョン（v0.1.0）、ブラウザ・端末、再現手順を添えてください。</p>
   <h3>ライセンス</h3>
   <p>GNU General Public License v3.0（GPL-3.0）</p>
   <p><a href="LICENSE" target="_blank" rel="noopener">ライセンス全文（別タブ）</a></p>
   <p><a href="https://github.com/constdrop/gridori" target="_blank" rel="noopener">ソースコード・不具合報告（GitHub・別タブ）</a></p>
 </dialog>
+
+
 
 <dialog id="page-dialog" aria-labelledby="page-title">
   <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
@@ -211,6 +224,18 @@ let selected=null, scale=1; // 1mm = .1px-ish visually; SVG viewBox stays simple
 let uid=1;
 let activeAppDialog=null;
 let appDialogReturnFocus=null;
+let savedDrawing=null;
+function hasUnsavedChanges(){return savedDrawing!==null&&JSON.stringify(data)!==savedDrawing}
+function updateSaveState(){
+  document.getElementById('save-state').textContent=hasUnsavedChanges()?'未保存の変更あり — メニューからJSON保存':'自動保存なし — メニューからJSON保存';
+}
+function markDrawingSaved(){savedDrawing=JSON.stringify(data);updateSaveState()}
+function confirmReplaceDrawing(){return !hasUnsavedChanges()||confirm('未保存の変更があります。現在の図面を置き換えてもよいですか？必要な図面はキャンセルしてJSON保存してください。')}
+function warnBeforeUnload(event){
+  if(!hasUnsavedChanges())return;
+  event.preventDefault();event.returnValue='';
+}
+window.addEventListener('beforeunload',warnBeforeUnload);
 function closeMenu(){document.getElementById('app-menu').open=false}
 function openAppDialog(id){
   const trigger=document.activeElement;
@@ -472,6 +497,7 @@ function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
 function render(){
+  updateSaveState();
   const page=WallModel.page(data.page);
   svg.setAttribute('width',px(page.width));svg.setAttribute('height',px(page.height));
   svg.setAttribute('viewBox',`${px(page.x)} ${px(page.y)} ${px(page.width)} ${px(page.height)}`);
@@ -848,22 +874,26 @@ function fitPageToDrawing(){
   applyPageSettings();
 }
 function loadSample(){
-  if(!confirm('現在の図面を1DKのサンプルに置き換えます。必要な図面は先にJSON保存してください。読み込みますか？'))return;
+  if(hasUnsavedChanges()){
+    if(!confirmReplaceDrawing())return;
+  }else if(!confirm('現在の図面を1DKのサンプルに置き換えます。必要な図面は先にJSON保存してください。読み込みますか？'))return;
   data=WallModel.normalize(JSON.parse(JSON.stringify(GridoriSample)));selected=null;closeMenu();fit();render();
 }
 function saveJSON(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="gridori.json";a.click();
+  markDrawingSaved();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 function loadJSON(){
   const input=document.createElement("input");input.type="file";input.accept=".json";
-  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const loaded=WallModel.normalize(JSON.parse(r.result));dragEnd();data=loaded;selected=null;render()}catch(e){alert("JSONを読み込めませんでした")}};if(input.files[0])r.readAsText(input.files[0])};input.click();
+  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const loaded=WallModel.normalize(JSON.parse(r.result));if(!confirmReplaceDrawing())return;dragEnd();data=loaded;selected=null;markDrawingSaved();render()}catch(e){alert("JSONを読み込めませんでした")}};if(input.files[0])r.readAsText(input.files[0])};input.click();
 }
 newWall();
 newWall();
 data.walls[0].x=455;data.walls[0].y=455;data.walls[0].length=3640;data.walls[0].angle=0;data.walls[0].thickness=140;
 data.walls[1].x=455;data.walls[1].y=4095;data.walls[1].length=3640;data.walls[1].angle=0;data.walls[1].thickness=140;
-selected=null;render();
+selected=null;markDrawingSaved();render();
 </script>
 </body>
 </html>
