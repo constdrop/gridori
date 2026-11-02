@@ -18,6 +18,11 @@
   h3{font-size:13px;margin:8px 0}
   button{width:100%;padding:8px;margin:3px 0;border:1px solid #bbb;background:#fff;border-radius:4px;text-align:left;cursor:pointer}
   button:hover{background:#eee}
+  .left-pane{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
+  .parts-list{flex:1;min-height:0;overflow:auto;padding:12px}
+  .conversion-table{flex:none;padding:12px;border-top:1px solid #ccc;background:#f3f3f3}
+  .conversion-content{max-height: min(40vh,320px);overflow:auto}
+  .conversion-table summary{cursor:pointer;font-size:13px;font-weight:bold;padding:8px;border:1px solid #bbb;border-radius:4px;background:#fff}
   .hint{font-size:11px;color:#666;line-height:1.5;margin:8px 0}
   .canvas{position:relative;overflow:auto;background:#ddd}
   svg{display:block;background:#fff;margin:30px;box-shadow:0 1px 5px #999}
@@ -82,7 +87,8 @@
   </details>
 </header>
 <main>
-  <aside>
+  <aside class="left-pane">
+    <div class="parts-list">
     <h3>壁</h3>
     <button onclick="newWall()">＋ 壁</button>
     <button onclick="newWall('railing')">＋ 手すり壁</button>
@@ -108,6 +114,26 @@
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
+    </div>
+    <details class="conversion-table">
+      <summary>間 → mm 換算表</summary>
+      <div class="conversion-content">
+    <p class="hint">1間＝1,820mm（この図面の基準）</p>
+    <table aria-label="間からミリメートルへの換算表" style="width:100%;font-size:13px;text-align:left">
+      <thead><tr><th>間</th><th>mm</th></tr></thead>
+      <tbody>
+        <tr><td>¼間</td><td>455</td></tr>
+        <tr><td>半間</td><td>910</td></tr>
+        <tr><td>1間</td><td>1,820</td></tr>
+        <tr><td>1間半</td><td>2,730</td></tr>
+        <tr><td>2間</td><td>3,640</td></tr>
+        <tr><td>2間半</td><td>4,550</td></tr>
+        <tr><td>3間</td><td>5,460</td></tr>
+        <tr><td>4間</td><td>7,280</td></tr>
+      </tbody>
+    </table>
+      </div>
+    </details>
   </aside>
 
   <section class="canvas" id="canvas">
