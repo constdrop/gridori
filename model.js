@@ -10,6 +10,12 @@
     }
     return o;
   }
+  function textSpec(f){
+    if(typeof f.label!=='string'||!Number.isFinite(f.fontSize)||Math.round(f.fontSize)<1||f.fontSize>10000)throw Error('Invalid text');
+    const label=f.label.replace(/[\r\n\u2028\u2029]+/g,' '),fontSize=Math.round(f.fontSize);
+    const em=Array.from(label).reduce((sum,c)=>sum+(/[\u0020-\u007e]/.test(c)?0.6:1),0);
+    return {label,fontSize,width:Math.max(1,Math.ceil((em+0.2)*fontSize)),height:Math.ceil(fontSize*1.3)};
+  }
   function resizeWall(w,edge,point,step=455){
     const ends=endpoints(w),fixed=ends[edge===0?1:0],sign=edge===0?-1:1;
     const dx=(point.x-fixed.x)*sign,dy=(point.y-fixed.y)*sign;
@@ -190,7 +196,7 @@
       if(w.wallKind==='railing')o.wallKind='railing';
       return o;
     }),fixtures:fixtures.map(f=>{
-      const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
+      const o=check({...f,...(f.type==='text'?textSpec(f):{}),angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
       if(o.type==='bath')bath(o);
@@ -208,7 +214,7 @@
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,integerMM,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

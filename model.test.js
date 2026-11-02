@@ -6,6 +6,40 @@ const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 
+test('single-line text derives dimensions, validates size and survives JSON import',()=>{
+  const f={id:'text1',type:'text',x:10.4,y:20.7,angle:30,label:'居室\nA',fontSize:150};
+  const data=M.normalize({version:3,walls:[],fixtures:[f]});
+  const t=data.fixtures[0];
+  assert.equal(t.label,'居室 A');assert.equal(t.x,10);assert.equal(t.y,21);
+  assert.ok(M.textSpec({...f,label:'居室 ABC'}).width>t.width);
+  assert.ok(M.textSpec({...f,fontSize:300}).width>t.width);
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))),data);
+  for(const fontSize of [0,-1,Infinity,10001])assert.throws(()=>M.textSpec({...f,fontSize}));
+  assert.throws(()=>M.textSpec({...f,label:null}));
+});
+
+test('text UI edits content, measures natural width, rotates, moves and deletes',()=>{
+  const {run,nodes}=app();run('addText()');
+  assert.equal(run('selected.type'),'text');
+  assert.ok(nodes.get('properties').innerHTML.includes('pfontsize'));
+  for(const [id,value] of Object.entries({ptext:'寝室 <6帖>',pfontsize:'180',pxx:'123.4',pyy:'456.7',pang:'0'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.label'),'寝室 <6帖>');
+  assert.equal(run('selected.x'),123);assert.equal(run('selected.y'),457);
+  const g=nodes.get('objects').children.find(n=>n.dataset.id===run('selected.id'));
+  assert.equal(g.children[1].textContent,'寝室 <6帖>');
+  assert.equal(g.children[0].attrs.fill,'transparent');
+  assert.equal(g.children[1].attrs['font-size'],18);
+  // Supply a browser font measurement to verify the automatic width calculation.
+  run('const originalCreate=document.createElementNS;document.createElementNS=(ns,tag)=>{const n=originalCreate(ns,tag);if(tag==="text")n.getComputedTextLength=()=>321;return n};render();document.createElementNS=originalCreate');
+  assert.equal(run('selected.width'),3246);
+  run('rotateSelected(90)');assert.equal(run('selected.angle'),90);
+  run('svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:123,clientY:457,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:400,clientY:700});dragEnd()');
+  assert.equal(run('selected.x'),364);assert.equal(run('selected.y'),728);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.label'),'寝室 <6帖>');assert.equal(run('selected.fontSize'),180);
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),0);
+});
+
 test('resizing either wall end projects onto its axis and snaps length to 455mm',()=>{
   for(const angle of [0,90,180,270,37])for(const edge of [0,1]){
     const w=wall({angle}),u={x:Math.cos(angle*Math.PI/180),y:Math.sin(angle*Math.PI/180)};

@@ -113,6 +113,8 @@
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
+    <h3>文字</h3>
+    <button onclick="addText()">＋ 文字列</button>
     </div>
     <details class="conversion-table">
       <summary>間 → mm 換算表</summary>
@@ -249,6 +251,27 @@ function newWall(kind='normal'){
   const n={id:nextId("w"),type:"wall",x:910,y:910,length:2730,angle:0,thickness:140};
   if(kind==='railing')n.wallKind='railing';
   data.walls.push(n); selected=n; render();
+}
+function addText(){
+  const n={id:nextId('f'),type:'text',x:1365,y:1365,angle:0,label:'文字列',fontSize:150};
+  Object.assign(n,WallModel.textSpec(n));
+  data.fixtures.push(n);selected=n;render();
+}
+function drawText(g,f){
+  Object.assign(f,WallModel.textSpec(f));
+  g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`);
+  g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+  const hit=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  hit.setAttribute('fill','transparent');hit.setAttribute('height',px(f.height));g.appendChild(hit);
+  const text=document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('x',px(f.fontSize*0.1));text.setAttribute('y',px(f.fontSize));
+  text.setAttribute('font-size',px(f.fontSize));text.setAttribute('fill','#222');
+  text.setAttribute('xml:space','preserve');text.style.whiteSpace='pre';text.textContent=f.label;
+  g.appendChild(text);objects.appendChild(g);
+  // Measure the rendered font so mixed Japanese/Latin text gets its natural width.
+  const measured=text.getComputedTextLength?.();
+  if(Number.isFinite(measured)&&measured>0)f.width=Math.ceil(mm(measured)+f.fontSize*0.2);
+  hit.setAttribute('width',px(f.width));
 }
 function addFixture(type){
   if(type==='kitchen'){addKitchen('counter');return}
@@ -520,6 +543,7 @@ function render(){
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(f.type==='text'){drawText(g,f);continue}
     if(f.type==='wash'||f.type==='kitchen'){
       const back=WallModel.washBack(f);
       g.setAttribute('transform',`translate(${px(back.x)},${px(back.y)}) rotate(${f.angle||0})`);
@@ -674,6 +698,21 @@ function updateSelection(){
 function showProps(){
   const p=document.getElementById('properties');
   if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
+  if(selected.type==='text'){
+    p.innerHTML=`
+      <label for="ptext">文字列（1行）</label><input id="ptext" value="${esc(selected.label)}">
+      <label for="pfontsize">文字サイズ (mm)</label><input id="pfontsize" type="number" min="1" max="10000" step="1" value="${selected.fontSize}">
+      <div class="row">
+        <div><label for="pxx">X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
+        <div><label for="pyy">Y (mm)</label><input id="pyy" type="number" value="${selected.y}"></div>
+      </div>
+      <label for="pang">角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      <p class="hint">幅は文字列と文字サイズに合わせて自動調整します。X/Yは回転の中心となる左上位置です。</p>
+      <button onclick="applyProps()">値を反映</button>
+      <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+      <button onclick="deleteSelected()">削除</button>`;
+    return;
+  }
   const isWall=selected.type==="wall";
   p.innerHTML=`
     ${isWall?`<label for="pwallid">壁ID</label><input id="pwallid" value="${esc(selected.id)}" readonly>`:''}
@@ -770,6 +809,13 @@ function showProps(){
 function applyProps(){
   const q=id=>document.getElementById(id);
   if(!selected)return;
+  if(selected.type==='text'){
+    const ids=['pxx','pyy','pang','pfontsize'];
+    if(ids.some(id=>q(id).value.trim()===''||!Number.isFinite(Number(q(id).value)))){alert('座標・角度・文字サイズは数値で入力してください。');return}
+    const next={...selected,x:Math.round(+q('pxx').value),y:Math.round(+q('pyy').value),angle:+q('pang').value,label:q('ptext').value,fontSize:+q('pfontsize').value};
+    try{Object.assign(next,WallModel.textSpec(next))}catch{alert('文字サイズは1〜10,000mmで入力してください。');return}
+    Object.assign(selected,next);render();return;
+  }
   const inputs=[...document.querySelectorAll('#properties input[type="number"]')];
   inputs.filter(i=>i.id!=='pang'&&i.id!=='psteps').forEach(i=>{
     if(i.value.trim()!==''&&Number.isFinite(Number(i.value)))i.value=String(Math.round(Number(i.value)));
