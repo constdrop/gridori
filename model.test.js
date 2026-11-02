@@ -5,6 +5,63 @@ const vm=require('node:vm');
 const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
+
+test('resizing either wall end projects onto its axis and snaps length to 455mm',()=>{
+  for(const angle of [0,90,180,270,37])for(const edge of [0,1]){
+    const w=wall({angle}),u={x:Math.cos(angle*Math.PI/180),y:Math.sin(angle*Math.PI/180)};
+    const fixed=M.endpoints(w)[edge===0?1:0],sign=edge===0?-1:1;
+    const point={x:fixed.x+sign*u.x*3200-u.y*600,y:fixed.y+sign*u.y*3200+u.x*600};
+    const result=M.resizeWall(w,edge,point);
+    assert.equal(result.length,3185);
+    assert.ok(Number.isInteger(result.x)&&Number.isInteger(result.y));
+    const preserved=M.endpoints({...w,...result})[edge===0?1:0];
+    assert.ok(Math.hypot(preserved.x-fixed.x,preserved.y-fixed.y)<=Math.SQRT1_2+1e-7);
+    assert.equal(M.resizeWall(w,edge,fixed).length,455);
+    assert.equal(M.resizeWall(w,edge,{x:fixed.x-sign*u.x*910,y:fixed.y-sign*u.y*910}).length,910);
+  }
+});
+
+test('dragging either endpoint turns through all four directions around the fixed endpoint',()=>{
+  for(const originalAngle of [0,90,180,270,37])for(const edge of [0,1])for(const turn of [0,90,180,270]){
+    const w=wall({angle:originalAngle}),fixed=M.endpoints(w)[edge===0?1:0];
+    const angle=(originalAngle+turn)%360,a=angle*Math.PI/180,sign=edge===0?-1:1;
+    const point={x:fixed.x+sign*3200*Math.cos(a)-600*Math.sin(a),y:fixed.y+sign*3200*Math.sin(a)+600*Math.cos(a)};
+    const result=M.resizeWall(w,edge,point);
+    assert.equal(result.angle,angle);assert.equal(result.length,3185);
+    const kept=M.endpoints({...w,...result})[edge===0?1:0];
+    assert.ok(Math.hypot(kept.x-fixed.x,kept.y-fixed.y)<=Math.SQRT1_2+1e-7);
+  }
+  const w=wall();
+  assert.equal(M.resizeWall(w,1,{x:w.x+1000,y:w.y+999}).angle,0);
+  assert.equal(M.resizeWall(w,1,{x:w.x+999,y:w.y+1000}).angle,90);
+});
+
+test('import rounds mm specifications while keeping angles and rejects rounded zero sizes',()=>{
+  const data=M.normalize({version:3,walls:[wall({x:12.49,y:-3.7,length:2000.6,thickness:139.8,angle:37.25})],
+    fixtures:[{id:'f',type:'wash',x:1.1,y:2.9,width:750.2,height:606.666,angle:12.5}],
+    page:{x:0.1,y:-0.7,width:12000.3,height:8500.6}});
+  assert.deepEqual(data.walls[0],wall({x:12,y:-4,length:2001,thickness:140,angle:37.25}));
+  assert.equal(data.fixtures[0].height,607);assert.equal(data.fixtures[0].angle,12.5);
+  assert.deepEqual(data.page,{x:0,y:-1,width:12000,height:8501});
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))),data);
+  assert.throws(()=>M.normalize({version:3,walls:[wall({length:0.2})],fixtures:[]}));
+});
+
+test('wall handles resize through pointer handlers and movement stores integer mm',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];render();svgPoint=e=>({x:e.clientX,y:e.clientY})');
+  const handle=nodes.get('objects').children.at(-1);
+  handle.events.pointerdown[0]({button:0,preventDefault(){},stopPropagation(){}});
+  run('dragMove({clientX:455+3200,clientY:1000})');
+  assert.equal(run('selected.length'),3185);assert.equal(run('selected.y'),455);
+  run('dragMove({clientX:455,clientY:455+1850})');
+  assert.equal(run('selected.angle'),90);assert.equal(run('selected.length'),1820);
+  assert.equal(run('selected.x'),455);assert.equal(run('selected.y'),455);
+  run('dragEnd()');assert.equal(run('dragState'),null);
+  run('startDrag({button:0,clientX:455,clientY:455,preventDefault(){},stopPropagation(){}},selected);WallModel.snapWallOriginal=WallModel.snapWall;WallModel.snapWall=()=>({x:123.4,y:456.7});dragMove({clientX:600,clientY:600});WallModel.snapWall=WallModel.snapWallOriginal');
+  assert.equal(run('selected.x'),123);assert.equal(run('selected.y'),457);
+  run('dragEnd()');
+});
 test('wall endpoints and physical extents in every cardinal direction',()=>{
   for(const [angle,x,y] of [[0,3640,910],[90,910,3640],[180,-1820,910],[270,910,-1820]]){
     const w=wall({angle}),end=M.endpoints(w)[1],body=M.body(w);
@@ -400,7 +457,7 @@ test('washstand back snaps to wall faces in four orientations, without crossing 
   assert.equal(M.snapWash({...f,x:300},[wall]).x,375);
   assert.equal(M.snapWash({...f,x:1000,angle:90},[wall]).target,null);
   const {run,nodes}=app();run('selected=data.walls[0];addFixture("wash")');
-  near(run('selected.height'),910*2/3);
+  assert.equal(run('selected.height'),607);
   assert.equal(run('selected.y'),525);
   for(const angle of [0,90,180,270]){
     if(angle)run('rotateSelected(90)');
@@ -552,11 +609,11 @@ test('dimension UI persists annotations, follows edits, and removes dangling ref
   run('selected=data.walls[0]');nodes.set('pdimwall',{value:'w2'});
   run('addDimension("inner");addDimension("outer")');
   assert.equal(run('data.dimensions.length'),2);
-  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3500 mm');
-  assert.equal(nodes.get('objects').children.at(-1).children.at(-1).textContent,'外寸 3780 mm');
+  const dimensionLabels=()=>nodes.get('objects').children.filter(g=>g.children.at(-1)?.attrs?.['font-size']===11).map(g=>g.children.at(-1).textContent);
+  assert.deepEqual(dimensionLabels(),['内寸 3500 mm','外寸 3780 mm']);
   run('editDimension(0,"-910");data.walls[1].y+=455;render()');
   assert.equal(run('data.dimensions[0].offset'),-910);
-  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3955 mm');
+  assert.equal(dimensionLabels()[0],'内寸 3955 mm');
   run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
   assert.equal(run('data.dimensions.length'),2);assert.equal(run('data.dimensions[0].offset'),-910);
   run('data.walls[1].angle=90;render()');

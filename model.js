@@ -3,6 +3,22 @@
   const direction=w=>{const a=w.angle*Math.PI/180;return {x:Math.cos(a),y:Math.sin(a)}};
   function endpoints(w){const u=direction(w);return [{x:w.x,y:w.y},{x:w.x+w.length*u.x,y:w.y+w.length*u.y}]}
   function body(w){return {x:-w.thickness/2,y:-w.thickness/2,width:w.length+w.thickness,height:w.thickness}}
+  // Round persisted specifications, keeping calculated geometry at full precision.
+  function integerMM(o){
+    for(const key of ['x','y','length','thickness','width','height','wallThickness','offset']){
+      if(Number.isFinite(o[key]))o[key]=Math.round(o[key]);
+    }
+    return o;
+  }
+  function resizeWall(w,edge,point,step=455){
+    const ends=endpoints(w),fixed=ends[edge===0?1:0],sign=edge===0?-1:1;
+    const dx=(point.x-fixed.x)*sign,dy=(point.y-fixed.y)*sign;
+    // Snap relative to the original angle so imported diagonal walls also turn in quarter turns.
+    const turn=Math.hypot(dx,dy)<1e-7?0:Math.round((Math.atan2(dy,dx)*180/Math.PI-w.angle)/90);
+    const angle=((w.angle+turn*90)%360+360)%360,u=direction({angle});
+    const length=Math.max(step,Math.round((dx*u.x+dy*u.y)/step)*step);
+    return integerMM({x:edge===0?fixed.x-length*u.x:w.x,y:edge===0?fixed.y-length*u.y:w.y,length,angle});
+  }
   function snapWall(w,walls,tolerance=182){
     let best=null;
     const ends=endpoints(w);
@@ -152,7 +168,7 @@
   function page(value){
     const p=value??{x:0,y:0,width:12000,height:8500};
     if(![p.x,p.y,p.width,p.height].every(Number.isFinite)||p.width<100||p.height<100||p.width>200000||p.height>200000)throw Error('Invalid page');
-    return {x:p.x,y:p.y,width:p.width,height:p.height};
+    return integerMM({x:p.x,y:p.y,width:p.width,height:p.height});
   }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
@@ -164,7 +180,7 @@
       if(typeof o.id!=='string'||!o.id||ids.has(o.id))throw Error('Invalid id');
       ids.add(o.id);
       for(const k of fields)if(!Number.isFinite(o[k]))throw Error('Invalid '+k);
-      return o;
+      return integerMM(o);
     }
     const result={version:3,units:'mm',grid:{major:910,minor:455},walls:walls.map(w=>{
       // Legacy width is the nominal length; x/y already denoted the reference point.
@@ -186,13 +202,13 @@
       result.dimensions=input.dimensions.map(d=>{
         if(!d||!['inner','outer'].includes(d.kind)||!Number.isFinite(d.offset)||d.wallA===d.wallB||
           !result.walls.some(w=>w.id===d.wallA)||!result.walls.some(w=>w.id===d.wallB))throw Error('Invalid dimension');
-        return {wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset};
+        return integerMM({wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset});
       });
     }
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
