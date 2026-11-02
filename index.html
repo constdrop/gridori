@@ -29,7 +29,6 @@
   label{display:block;font-size:12px;margin-top:9px;color:#555}
   input,select{width:100%;padding:6px;border:1px solid #aaa;border-radius:3px;background:#fff}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-  .status{position:absolute;left:12px;bottom:10px;background:#fff;padding:5px 8px;border:1px solid #bbb;border-radius:3px;font-size:11px}
   .selected{outline:2px solid #1976d2}
   #objects [data-id]{cursor:grab;touch-action:none}
   #objects [data-id]:active{cursor:grabbing}
@@ -53,7 +52,7 @@
   @page{size:A4 landscape;margin:10mm}
   @media print{
     html,body{margin:0;padding:0;background:#fff}
-    header,aside,.status,.view-tools,dialog{display:none!important}
+    header,aside,.view-tools,dialog{display:none!important}
     dialog::backdrop{display:none}
     main{display:block;height:auto}
     .canvas{position:static;overflow:visible;background:#fff}
@@ -157,7 +156,6 @@
       <rect id="grid-background" width="1200" height="850" fill="url(#grid910)"/>
       <g id="objects"></g>
     </svg>
-    <div class="status" id="status">910mmグリッド / 選択なし</div>
   </section>
 
   <aside class="right">
@@ -671,9 +669,6 @@ function updateSelection(){
   document.querySelectorAll('#objects [data-id]').forEach(e=>{
     if(selected && e.dataset.id===selected.id)e.classList.add('selected'); else e.classList.remove('selected');
   });
-  document.getElementById('status').textContent=selected?
-    `${selected.type} / x=${selected.x} y=${selected.y} / ${selected.type==='wall'?`設定長 ${selected.length} / 表示長 ${selected.length+selected.thickness}`:`${selected.width}×${selected.height}`} mm`:
-    "910mmグリッド / 選択なし";
   showProps();
 }
 function showProps(){
