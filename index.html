@@ -114,6 +114,9 @@
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
+    <h3>床</h3>
+    <button onclick="addFixture('doma')">＋ 土間</button>
+    <button onclick="addFixture('flooring')">＋ フローリング</button>
     <h3>文字</h3>
     <button onclick="addText()">＋ 文字列</button>
     </div>
@@ -277,7 +280,7 @@ function drawText(g,f){
 function addFixture(type){
   if(type==='kitchen'){addKitchen('counter');return}
   const defs={
-    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], doma:[1820,910,"土間"], flooring:[1820,1820,"フローリング"], kitchen:[2550,650,"キッチン"],
     wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
@@ -286,6 +289,13 @@ function addFixture(type){
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
   if(type==='toilet')n.origin='center';
+  if(['doma','flooring'].includes(type)){
+    n.x=910;n.y=910;n.wallThickness=selected?.type==='wall'?selected.thickness:140;
+    if(selected?.type==='wall'){
+      n.x=selected.x;n.y=selected.y;n.width=Math.min(n.width,selected.length);
+    }
+    try{WallModel.floorArea(n)}catch{alert('床の幅・奥行きより壁厚を小さくしてください。');return}
+  }
   if(type==='wash'){
     n.origin='backCenter';
     if(selected?.type==='wall'){
@@ -513,6 +523,32 @@ function render(){
   const background=document.getElementById('grid-background');
   for(const [key,value] of Object.entries(page))background.setAttribute(key,px(value));
   objects.innerHTML="";
+  // Floor areas stay behind all walls, openings and equipment.
+  for(const f of data.fixtures.filter(f=>['doma','flooring'].includes(f.type))){
+    f.angle=0;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g'),box=WallModel.floorArea(f);
+    g.dataset.id=f.id;g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`);
+    g.addEventListener('pointerdown',e=>startDrag(e,f));
+    const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    for(const [key,value] of Object.entries(box))r.setAttribute(key,px(value));
+    r.setAttribute('fill','#ddd');
+    if(f.type==='flooring'){
+      const pattern=document.createElementNS('http://www.w3.org/2000/svg','pattern');
+      const patternId=`floor-pattern-${data.fixtures.indexOf(f)}`;
+      pattern.setAttribute('id',patternId);pattern.setAttribute('patternUnits','userSpaceOnUse');
+      pattern.setAttribute('width',182);pattern.setAttribute('height',30);
+      // Use a shared world origin so adjoining rectangles have continuous boards.
+      pattern.setAttribute('patternTransform',`rotate(${-f.angle||0}) translate(${-px(f.x)},${-px(f.y)}) rotate(${f.floorDirection??0})`);
+      const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      bg.setAttribute('width',182);bg.setAttribute('height',30);bg.setAttribute('fill','#eddbb9');pattern.appendChild(bg);
+      const joints=document.createElementNS('http://www.w3.org/2000/svg','path');
+      joints.setAttribute('d','M0 0H182 M0 15H182 M0 0V15 M91 15V30');
+      joints.setAttribute('stroke','#c2a77e');joints.setAttribute('stroke-width',.5);joints.setAttribute('fill','none');pattern.appendChild(joints);
+      const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
+      r.setAttribute('fill',`url(#${patternId})`);
+    }
+    g.appendChild(r);objects.appendChild(g);
+  }
   // Normal walls cover railing walls at shared joints, regardless of creation order.
   const wallsInDrawOrder=[...data.walls.filter(w=>w.wallKind==='railing'),...data.walls.filter(w=>w.wallKind!=='railing')];
   for(const w of wallsInDrawOrder){
@@ -543,6 +579,7 @@ function render(){
   // Draw bathroom floors before doors and other fixtures, independent of creation order.
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
+    if(['doma','flooring'].includes(f.type))continue;
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
     if(f.type==='text'){drawText(g,f);continue}
     if(f.type==='wash'||f.type==='kitchen'){
@@ -679,6 +716,7 @@ function dragMove(e){
   }
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    ['doma','flooring'].includes(d.obj.type)?{x:Math.round(x/455)*455,y:Math.round(y/455)*455}:
     d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
     d.obj.type==='kitchen'?WallModel.snapKitchen({...d.obj,x,y},data.walls):
     d.obj.type==='wash'?WallModel.snapWash({...d.obj,x,y},data.walls):
@@ -739,8 +777,15 @@ function showProps(){
         <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
         <div><label>${isOpening(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
       </div>
-      <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      ${!['doma','flooring'].includes(selected.type)?`<label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">`:''}
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${['doma','flooring'].includes(selected.type)?`
+        <label>周囲の壁厚 (mm)</label><input id="pfloorwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <label>各辺の接続（図面の上下左右）</label>
+        ${[['top','上'],['bottom','下'],['left','左'],['right','右']].map(([edge,label])=>`<label for="pfloor-${edge}">${label}の辺</label><select id="pfloor-${edge}"><option value="wall" ${!(selected.connections??[]).includes(edge)?'selected':''}>壁に接する</option><option value="floor" ${(selected.connections??[]).includes(edge)?'selected':''}>床につながる</option></select>`).join('')}
+        ${selected.type==='flooring'?`<label for="pfloordirection">板の方向（図面基準）</label><select id="pfloordirection"><option value="0" ${!selected.floorDirection?'selected':''}>横方向</option><option value="90" ${selected.floorDirection===90?'selected':''}>縦方向</option></select>`:''}
+        <p class="hint">床は回転しません。幅と高さ（奥行き）で縦長・横長を調整します。各辺は図面の上下左右に対応します。「壁に接する」辺だけ壁厚の半分を内側へ寄せます。接続する床の両側を「床につながる」にして座標を合わせてください。同じ向きのフローリングは模様もつながります。X/Yは左上の壁芯交点です。ドラッグは455mm単位で、壁の変更には自動追従しません。</p>
+      `:''}
       ${selected.type==='kitchen'?`
         <label>キッチン部品</label><select id="pkitchen">${[['counter','作業台'],['sink','シンク台'],['stove','コンロ台'],['corner','コーナー'],['combined','一体型（シンク＋コンロ）']].map(([value,label])=>`<option value="${value}" ${(selected.kitchenKind??'combined')===value?'selected':''}>${label}</option>`).join('')}</select>
         <label>コーナーの壁側（角度0°基準）</label><select id="pcornerSide"><option value="right" ${selected.cornerSide!=='left'?'selected':''}>背面（上）＋右側</option><option value="left" ${selected.cornerSide==='left'?'selected':''}>背面（上）＋左側</option></select>
@@ -799,7 +844,7 @@ function showProps(){
         <select id="pfoldSide"><option value="1" ${selected.foldSide!==-1?'selected':''}>壁の下側</option><option value="-1" ${selected.foldSide===-1?'selected':''}>壁の上側</option></select>
         <p class="hint">2枚の戸を途中まで折った姿と、畳む方向の矢印を表示します。左右・上下は角度0°基準で、戸と一緒に回転します。</p>
       `:''}
-      ${!['kitchen','wash','toilet','bath'].includes(selected.type)?'<div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>':''}
+      ${!['kitchen','wash','toilet','bath','doma','flooring'].includes(selected.type)?'<div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>':''}
       ${isDoor(selected)?'<p class="hint">X/Yは開口の壁芯始点。壁を選んで追加すると位置・角度・壁厚を引き継ぎます。ドアの円弧は90°までの開閉範囲、引き戸の矢印は移動方向です。</p>':''}
       ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
     `}
@@ -826,6 +871,15 @@ function applyProps(){
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
   }
+  if(['doma','flooring'].includes(selected.type)){
+    const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pfloorwall').value,
+      connections:['top','bottom','left','right'].filter(edge=>q('pfloor-'+edge)?.value==='floor')};
+    if(selected.type==='flooring')next.floorDirection=Number(q('pfloordirection').value);
+    try{WallModel.floorArea(next)}catch{alert('壁厚は0以上かつ床の幅・奥行き未満で入力してください。');return}
+    selected.wallThickness=next.wallThickness;
+    selected.connections=next.connections;
+    if(selected.type==='flooring')selected.floorDirection=next.floorDirection;
+  }
   if(selected.type==='bath'){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pbathwall').value};
     try{WallModel.bath(next)}catch{alert('壁厚は0以上かつ浴室の幅・高さ未満で入力してください。');return}
@@ -848,7 +902,7 @@ function applyProps(){
     selected.thickness=+q("pth").value;
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
-    selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    selected.angle=['doma','flooring'].includes(selected.type)?0:+q("pang").value;selected.label=q("plabel").value;
     if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
@@ -868,7 +922,7 @@ function changeWallLength(delta){
   render();
 }
 function rotateSelected(delta){
-  if(!selected)return;
+  if(!selected||['doma','flooring'].includes(selected.type))return;
   selected.angle=((selected.angle||0)+delta)%360;
   if(selected.angle<0)selected.angle+=360;
   render();

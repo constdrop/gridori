@@ -6,6 +6,81 @@ const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 
+test('floors stay axis-aligned without rotation inputs or keyboard rotation',()=>{
+  const {run,nodes,dispatch}=app();
+  for(const type of ['doma','flooring']){
+    run(`selected=data.walls[0];selected.angle=90;addFixture('${type}')`);
+    assert.equal(run('selected.angle'),0);
+    const html=nodes.get('properties').innerHTML;
+    assert.ok(!html.includes('id="pang"'));assert.ok(!html.includes('rotateSelected('));
+    dispatch('keydown',{key:'r'});assert.equal(run('selected.angle'),0);
+    dispatch('keydown',{key:'R',shiftKey:true});assert.equal(run('selected.angle'),0);
+    run('rotateSelected(90)');assert.equal(run('selected.angle'),0);
+    run('selected.angle=90;data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures.at(-1);render()');
+    assert.equal(run('selected.angle'),0);
+  }
+});
+
+test('floor connections remove only matching insets and meet without gaps',()=>{
+  for(const type of ['doma','flooring']){
+    const a={id:'a',type,x:0,y:0,width:1820,height:1820,angle:0,wallThickness:140,connections:['right']};
+    const b={...a,id:'b',x:1820,connections:['left']};
+    const left=M.floorArea(a),right=M.floorArea(b);
+    assert.deepEqual(left,{x:70,y:70,width:1750,height:1680});
+    assert.equal(a.x+left.x+left.width,b.x+right.x);
+    assert.deepEqual(M.floorArea({...a,connections:['top','bottom','left','right']}),{x:0,y:0,width:1820,height:1820});
+    const data={version:3,walls:[],fixtures:[a,b]};
+    assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))).fixtures,[a,b]);
+    assert.throws(()=>M.floorArea({...a,connections:['bad']}));
+    assert.throws(()=>M.floorArea({...a,connections:'right'}));
+  }
+  assert.throws(()=>M.floorArea({type:'flooring',width:1820,height:1820,floorDirection:45}));
+});
+
+test('flooring edits connections and board direction, renders behind walls and round-trips',()=>{
+  const {run,nodes}=app();run('addFixture("flooring")');
+  assert.equal(run('selected.type'),'flooring');
+  for(const [id,value] of Object.entries({pxx:'1820',pyy:'0',pww:'1820',phh:'1820',pang:'90',pfloorwall:'140',plabel:'LDK', 'pfloor-left':'floor','pfloor-right':'wall','pfloor-top':'wall','pfloor-bottom':'floor',pfloordirection:'90'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('JSON.stringify(selected.connections)'), '["bottom","left"]');
+  assert.equal(run('selected.floorDirection'),90);
+  const g=nodes.get('objects').children[0],pattern=g.children[0].children[0];
+  assert.equal(g.dataset.id,run('selected.id'));
+  assert.equal(pattern.attrs.patternTransform,'rotate(0) translate(-182,0) rotate(90)');
+  const rect=g.children[1];assert.equal(rect.attrs.x,0);assert.equal(rect.attrs.width,175);
+  assert.equal(rect.attrs.height,175);assert.equal(rect.attrs.stroke,undefined);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.floorDirection'),90);assert.equal(run('selected.connections.includes("left")'),true);
+});
+
+test('doma floors inset from wall centerlines and validate imported sizes',()=>{
+  const f={id:'floor',type:'doma',x:455,y:455,width:1820,height:910,angle:0,wallThickness:140};
+  assert.deepEqual(M.floorArea(f),{x:70,y:70,width:1680,height:770});
+  assert.deepEqual(M.floorArea({...f,wallThickness:0}),{x:0,y:0,width:1820,height:910});
+  const data={version:3,walls:[],fixtures:[f]};
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))).fixtures[0],f);
+  for(const wallThickness of [-1,910,Infinity])assert.throws(()=>M.normalize({...data,fixtures:[{...f,wallThickness}]}));
+});
+
+test('doma UI inherits wall origin, renders behind walls, edits, moves and rotates',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];addFixture("doma")');
+  assert.equal(run('selected.x'),455);assert.equal(run('selected.y'),455);
+  const floor=nodes.get('objects').children[0];
+  assert.equal(floor.dataset.id,run('selected.id'));
+  assert.equal(floor.children[0].attrs.width,168);assert.equal(floor.children[0].attrs.x,7);
+  assert.equal(nodes.get('objects').children[1].dataset.id,'w1');
+  for(const [id,value] of Object.entries({pxx:'910',pyy:'455',pww:'2730',phh:'1820',pang:'90',pfloorwall:'200',plabel:'玄関土間'}))nodes.set(id,{value});
+  run('applyProps()');
+  assert.equal(run('selected.width'),2730);assert.equal(run('selected.wallThickness'),200);
+  assert.equal(nodes.get('objects').children[0].attrs.transform,'translate(91,45.5) rotate(0)');
+  nodes.get('pfloorwall').value='1820';run('applyProps()');assert.equal(run('selected.wallThickness'),200);
+  run('svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:910,clientY:455,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:1400,clientY:900});dragEnd()');
+  assert.equal(run('selected.x'),1365);assert.equal(run('selected.y'),910);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render();rotateSelected(-90)');
+  assert.equal(run('selected.angle'),0);assert.equal(run('selected.label'),'玄関土間');
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),0);
+});
+
 test('single-line text derives dimensions, validates size and survives JSON import',()=>{
   const f={id:'text1',type:'text',x:10.4,y:20.7,angle:30,label:'居室\nA',fontSize:150};
   const data=M.normalize({version:3,walls:[],fixtures:[f]});

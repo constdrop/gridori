@@ -152,10 +152,18 @@
     const center=v=>Math.round((v-455)/910)*910+455;
     return {x:center(f.x+dx)-dx,y:center(f.y+dy)-dy};
   }
-  function bath(f){
+  function floorArea(f){
     const thickness=f.wallThickness??140;
     if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
-    const x=thickness/2,y=thickness/2,width=f.width-thickness,height=f.height-thickness;
+    const connections=f.connections??[];
+    if(!Array.isArray(connections)||connections.some(e=>!['top','bottom','left','right'].includes(e)))throw Error('Invalid floor connections');
+    if(f.type==='flooring'&&![0,90].includes(f.floorDirection??0))throw Error('Invalid floor direction');
+    const inset=edge=>connections.includes(edge)?0:thickness/2;
+    const x=inset('left'),y=inset('top'),width=f.width-x-inset('right'),height=f.height-y-inset('bottom');
+    return {x,y,width,height};
+  }
+  function bath(f){
+    const {x,y,width,height}=floorArea(f);
     return {x,y,width,height,tub:{x,y,width,height:height*.45}};
   }
   function dimension(d,walls){
@@ -200,6 +208,7 @@
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
       if(o.type==='bath')bath(o);
+      if(['doma','flooring'].includes(o.type)){floorArea(o);o.angle=0}
       if(o.type==='kitchen'&&o.kitchenKind!==undefined&&!['counter','sink','stove','corner','combined'].includes(o.kitchenKind))throw Error('Invalid kitchen kind');
       return o;
     })};
@@ -214,7 +223,7 @@
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
