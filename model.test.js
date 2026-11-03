@@ -6,6 +6,67 @@ const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 
+test('tatami size presets fill dimensions without discarding edits and preserve square or landscape shapes',()=>{
+  const {run,nodes}=app();run('addFixture("tatami")');
+  for(const [kind,width,height] of [['kyoma',955,1910],['edoma',880,1760],['danchima',850,1700]]){
+    nodes.set('pww',{value:'880'});nodes.set('phh',{value:'1760'});
+    nodes.set('plabel',{value:'編集中'});
+    run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(width));assert.equal(nodes.get('phh').value,String(height));
+    assert.equal(nodes.get('plabel').value,'編集中');assert.equal(run('selected.width'),880);
+    nodes.get('pww').value='880';nodes.get('phh').value='880';run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(width));assert.equal(nodes.get('phh').value,String(width));
+    nodes.get('pww').value='1760';nodes.get('phh').value='880';run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(height));assert.equal(nodes.get('phh').value,String(width));
+  }
+});
+
+test('floor finishes render in creation order beneath walls and doors, including after import',()=>{
+  for(const types of [['tatami','flooring'],['flooring','tatami'],['tatami','doma','flooring']]){
+    const {run,nodes}=app();
+    run('addFixture("door")');
+    for(const type of types)run(`addFixture('${type}');selected.x=910;selected.y=910`);
+    const expected=JSON.parse(run('JSON.stringify([...data.fixtures.filter(f=>["tatami","flooring","doma"].includes(f.type)).map(f=>f.id),...data.walls.map(w=>w.id),data.fixtures[0].id])'));
+    const order=()=>nodes.get('objects').children.filter(g=>g.dataset.id).map(g=>g.dataset.id);
+    run('selected=null;render()');assert.deepEqual(order(),expected);
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');assert.deepEqual(order(),expected);
+  }
+});
+
+test('tatami snaps either side to wall faces and both walls at a corner',()=>{
+  const mat={id:'mat',type:'tatami',x:100,y:100,width:880,height:1760,angle:0};
+  const top=wall({id:'top',x:0,y:0,length:3640}),left=wall({id:'left',x:0,y:0,length:3640,angle:90});
+  const corner=M.snapTatami(mat,[top,left]);
+  assert.equal(corner.x,70);assert.equal(corner.y,70);assert.ok(corner.target);
+  const bottom=M.snapTatami({...mat,y:-1900},[top]);assert.equal(bottom.y,-1830);
+  const right=M.snapTatami({...mat,x:-1000},[left]);assert.equal(right.x,-950);
+  assert.equal(M.snapTatami(mat,[{...top,length:500}]).target,null);
+  const free=M.snapTatami({...mat,x:500.2,y:1000.7},[]);assert.deepEqual(free,{x:500,y:1001,target:null});
+  const rotated=M.snapTatami({...mat,x:500,y:550,angle:90},[top]);
+  // Rotated bounding box is 1760 wide, 880 high; top edge sits at y+440.
+  assert.equal(rotated.target,null); // Outside snap tolerance.
+  const nearTop=M.snapTatami({...mat,x:500,y:-300,angle:90},[top]);
+  assert.equal(nearTop.y+440,70);
+  assert.equal(M.snapTatami({...mat,angle:45},[top]).target,null);
+});
+
+test('tatami and square mats create, edit, snap, rotate and round-trip',()=>{
+  const {run,nodes}=app();run('addFixture("tatami")');
+  assert.equal(run('selected.width'),880);assert.equal(run('selected.height'),1760);
+  run('addFixture("tatamiSquare")');assert.equal(run('selected.type'),'tatami');
+  assert.equal(run('selected.width'),880);assert.equal(run('selected.height'),880);
+  for(const [id,value] of Object.entries({pxx:'100',pyy:'500',pww:'850',phh:'850',pang:'0',plabel:'半畳'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.width'),850);assert.equal(run('selected.height'),850);
+  run('data.walls=[{id:"wall",type:"wall",x:0,y:0,length:3640,angle:90,thickness:140}];svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:100,clientY:500,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:90,clientY:500});dragEnd()');
+  assert.equal(run('selected.x'),70);
+  run('rotateSelected(90)');assert.equal(run('selected.angle'),90);
+  const group=nodes.get('objects').children.find(g=>g.dataset.id===run('selected.id'));
+  assert.equal(group.children[1].attrs.width,85);assert.equal(group.children[1].attrs.height,85);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[1];render()');
+  assert.equal(run('selected.width'),850);assert.equal(run('selected.angle'),90);
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),1);
+});
+
 test('floors stay axis-aligned without rotation inputs or keyboard rotation',()=>{
   const {run,nodes,dispatch}=app();
   for(const type of ['doma','flooring']){

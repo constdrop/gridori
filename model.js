@@ -147,6 +147,37 @@
     }
     return {x:best.x,y:best.y,target:best.target};
   }
+  function snapTatami(f,walls,tolerance=182){
+    const a=(f.angle??0)*Math.PI/180,u={x:Math.cos(a),y:Math.sin(a)},v={x:-Math.sin(a),y:Math.cos(a)};
+    // Fixtures rotate around the center of their unrotated bounding rectangle.
+    const center={x:f.x+f.width/2,y:f.y+f.height/2},choices=[];
+    for(const wall of walls){
+      const t=direction(wall),n={x:-t.y,y:t.x};
+      if(Math.min(Math.abs(t.x*u.x+t.y*u.y),Math.abs(t.x*v.x+t.y*v.y))>1e-6)continue;
+      const across=Math.abs(n.x*u.x+n.y*u.y)*f.width/2+Math.abs(n.x*v.x+n.y*v.y)*f.height/2;
+      const along=Math.abs(t.x*u.x+t.y*u.y)*f.width/2+Math.abs(t.x*v.x+t.y*v.y)*f.height/2;
+      const signed=(center.x-wall.x)*n.x+(center.y-wall.y)*n.y;
+      const side=signed<0?-1:1,delta=side*(across+wall.thickness/2)-signed;
+      if(Math.abs(delta)>tolerance)continue;
+      choices.push({wall,t,n,along,dx:delta*n.x,dy:delta*n.y});
+    }
+    let best=null;
+    const consider=active=>{
+      const dx=active.reduce((sum,c)=>sum+c.dx,0),dy=active.reduce((sum,c)=>sum+c.dy,0);
+      if(active.some(c=>{
+        const pos=(center.x+dx-c.wall.x)*c.t.x+(center.y+dy-c.wall.y)*c.t.y;
+        return pos<c.along-1e-6||pos>c.wall.length-c.along+1e-6;
+      }))return;
+      const distance=Math.hypot(dx,dy);
+      if(!best||active.length>best.count||(active.length===best.count&&distance<best.distance))best={dx,dy,distance,count:active.length};
+    };
+    for(let i=0;i<choices.length;i++){
+      consider([choices[i]]);
+      for(let j=i+1;j<choices.length;j++)if(Math.abs(choices[i].n.x*choices[j].n.x+choices[i].n.y*choices[j].n.y)<1e-6)consider([choices[i],choices[j]]);
+    }
+    return best?{x:Math.round(f.x+best.dx),y:Math.round(f.y+best.dy),target:{x:center.x+best.dx,y:center.y+best.dy}}:
+      {x:Math.round(f.x),y:Math.round(f.y),target:null};
+  }
   function snapToilet(f){
     const dx=f.origin==='center'?0:f.width/2,dy=f.origin==='center'?0:f.height/2;
     const center=v=>Math.round((v-455)/910)*910+455;
@@ -223,7 +254,7 @@
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,snapTatami,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);

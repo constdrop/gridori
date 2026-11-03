@@ -117,6 +117,8 @@
     <h3>床</h3>
     <button onclick="addFixture('doma')">＋ 土間</button>
     <button onclick="addFixture('flooring')">＋ フローリング</button>
+    <button onclick="addFixture('tatami')">＋ 畳</button>
+    <button onclick="addFixture('tatamiSquare')">＋ 半畳（正方形）</button>
     <h3>文字</h3>
     <button onclick="addText()">＋ 文字列</button>
     </div>
@@ -279,8 +281,10 @@ function drawText(g,f){
 }
 function addFixture(type){
   if(type==='kitchen'){addKitchen('counter');return}
+  const squareTatami=type==='tatamiSquare';
+  if(squareTatami)type='tatami';
   const defs={
-    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], doma:[1820,910,"土間"], flooring:[1820,1820,"フローリング"], kitchen:[2550,650,"キッチン"],
+    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], doma:[1820,910,"土間"], flooring:[1820,1820,"フローリング"], tatami:[880,1760,"畳"], kitchen:[2550,650,"キッチン"],
     wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
@@ -288,6 +292,7 @@ function addFixture(type){
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(squareTatami){n.height=880;n.label='半畳'}
   if(type==='toilet')n.origin='center';
   if(['doma','flooring'].includes(type)){
     n.x=910;n.y=910;n.wallThickness=selected?.type==='wall'?selected.thickness:140;
@@ -514,6 +519,30 @@ function drawWindow(g,f){
 function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
+function drawTatami(f){
+  const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+      g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      const pattern=document.createElementNS('http://www.w3.org/2000/svg','pattern');
+      const id=`tatami-pattern-${data.fixtures.indexOf(f)}`;
+      for(const [key,value] of Object.entries({id,width:4,height:4,patternUnits:'userSpaceOnUse'}))pattern.setAttribute(key,value);
+      const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      for(const [key,value] of Object.entries({width:4,height:4,fill:'#d5d8a0'}))bg.setAttribute(key,value);
+      const weave=document.createElementNS('http://www.w3.org/2000/svg','path');
+      for(const [key,value] of Object.entries({d:'M0 1H4 M0 3H4',stroke:'#b4ba7f','stroke-width':.35}))weave.setAttribute(key,value);
+      pattern.appendChild(bg);pattern.appendChild(weave);
+      const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
+      const mat=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      for(const [key,value] of Object.entries({width:px(f.width),height:px(f.height),fill:`url(#${id})`,stroke:'#7c8555','stroke-width':.6}))mat.setAttribute(key,value);
+      g.appendChild(mat);
+      const border=Math.min(3,px(Math.min(f.width,f.height)/10));
+      for(const x of [0,px(f.width)-border]){
+        const edge=document.createElementNS('http://www.w3.org/2000/svg','rect');
+        for(const [key,value] of Object.entries({x,y:0,width:border,height:px(f.height),fill:'#65714b'}))edge.setAttribute(key,value);
+        g.appendChild(edge);
+      }
+      objects.appendChild(g);
+}
 function render(){
   all().forEach(WallModel.integerMM);
   (data.dimensions??[]).forEach(WallModel.integerMM);
@@ -524,7 +553,8 @@ function render(){
   for(const [key,value] of Object.entries(page))background.setAttribute(key,px(value));
   objects.innerHTML="";
   // Floor areas stay behind all walls, openings and equipment.
-  for(const f of data.fixtures.filter(f=>['doma','flooring'].includes(f.type))){
+  for(const f of data.fixtures.filter(f=>['doma','flooring','tatami'].includes(f.type))){
+    if(f.type==='tatami'){drawTatami(f);continue}
     f.angle=0;
     const g=document.createElementNS('http://www.w3.org/2000/svg','g'),box=WallModel.floorArea(f);
     g.dataset.id=f.id;g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`);
@@ -579,7 +609,7 @@ function render(){
   // Draw bathroom floors before doors and other fixtures, independent of creation order.
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
-    if(['doma','flooring'].includes(f.type))continue;
+    if(['doma','flooring','tatami'].includes(f.type))continue;
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
     if(f.type==='text'){drawText(g,f);continue}
     if(f.type==='wash'||f.type==='kitchen'){
@@ -716,6 +746,7 @@ function dragMove(e){
   }
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    d.obj.type==='tatami'?WallModel.snapTatami({...d.obj,x,y},data.walls):
     ['doma','flooring'].includes(d.obj.type)?{x:Math.round(x/455)*455,y:Math.round(y/455)*455}:
     d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
     d.obj.type==='kitchen'?WallModel.snapKitchen({...d.obj,x,y},data.walls):
@@ -779,6 +810,13 @@ function showProps(){
       </div>
       ${!['doma','flooring'].includes(selected.type)?`<label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">`:''}
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${selected.type==='tatami'?`
+        <label>畳のサイズ</label>
+        <button onclick="setTatamiSize('kyoma')">京間：955 × 1,910mm</button>
+        <button onclick="setTatamiSize('edoma')">江戸間：880 × 1,760mm</button>
+        <button onclick="setTatamiSize('danchima')">団地間：850 × 1,700mm</button>
+        <p class="hint">ボタンで寸法を入力し「値を反映」。正方形は各規格の短辺×短辺になります。寸法は自由に変更でき、ドラッグで壁面に吸着します。</p>
+      `:''}
       ${['doma','flooring'].includes(selected.type)?`
         <label>周囲の壁厚 (mm)</label><input id="pfloorwall" type="number" min="0" value="${selected.wallThickness??140}">
         <label>各辺の接続（図面の上下左右）</label>
@@ -915,6 +953,15 @@ function applyProps(){
     }
   }
   render();
+}
+function setTatamiSize(kind){
+  if(selected?.type!=='tatami')return;
+  const sizes={kyoma:[955,1910],edoma:[880,1760],danchima:[850,1700]},size=sizes[kind];
+  if(!size)return;
+  const w=document.getElementById('pww'),h=document.getElementById('phh');
+  const square=Number(w.value)===Number(h.value),landscape=Number(w.value)>Number(h.value);
+  w.value=String(landscape?size[1]:size[0]);
+  h.value=String(square?size[0]:landscape?size[0]:size[1]);
 }
 function changeWallLength(delta){
   if(!selected || selected.type!=="wall")return;
