@@ -148,6 +148,28 @@ function app(){
   return {run:code=>vm.runInContext(code,context),nodes,dispatch:(name,event)=>document.events[name].forEach(fn=>fn(event))};
 }
 
+test('new drawing reloads only after confirmation',()=>{
+  const {run}=app();
+  run('let reloads=0;window.location={reload(){reloads++}};globalThis.confirm=()=>false;newDrawing()');
+  assert.equal(run('reloads'),0);
+  run('globalThis.confirm=()=>true;newDrawing()');
+  assert.equal(run('reloads'),1);
+});
+
+test('every fixture has one pair of quarter-turn buttons that preserve its position and dimensions',()=>{
+  const {run,nodes}=app();
+  for(const type of ['window','fixedWindow','door','slidingDoor','doubleSlidingDoor','foldingDoor','washer','stairs','landing','turnStairs','kitchen','wash','toilet','bath','text']){
+    run(type==='text'?'addText()':`addFixture('${type}')`);
+    const html=nodes.get('properties').innerHTML;
+    assert.equal((html.match(/onclick="rotateSelected\(-90\)"/g)||[]).length,1,type);
+    assert.equal((html.match(/onclick="rotateSelected\(90\)"/g)||[]).length,1,type);
+    const before=run('JSON.stringify([selected.x,selected.y,selected.width,selected.height])');
+    run('selected.angle=0;rotateSelected(-90)');assert.equal(run('selected.angle'),270);
+    run('rotateSelected(90)');assert.equal(run('selected.angle'),0);
+    assert.equal(run('JSON.stringify([selected.x,selected.y,selected.width,selected.height])'),before);
+  }
+});
+
 test('menu and modal dialogs suppress drawing shortcuts and restore focus on close',()=>{
   const {run,nodes,dispatch}=app();
   const menu=nodes.get('app-menu')??run('document.getElementById("app-menu")');

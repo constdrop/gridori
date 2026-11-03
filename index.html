@@ -73,6 +73,7 @@
   <details class="app-menu" id="app-menu" title="">
     <summary id="menu-toggle">☰ メニュー</summary>
     <nav class="menu-panel" aria-label="ファイルとヘルプ">
+      <button onclick="newDrawing()">新規作成</button>
       <button onclick="closeMenu();saveJSON()">JSON保存</button>
       <p class="hint">自動保存はありません。終了・再読み込みの前に保存してください。</p>
       <button onclick="closeMenu();loadJSON()">JSON読込</button>
@@ -798,6 +799,7 @@ function showProps(){
         <select id="pfoldSide"><option value="1" ${selected.foldSide!==-1?'selected':''}>壁の下側</option><option value="-1" ${selected.foldSide===-1?'selected':''}>壁の上側</option></select>
         <p class="hint">2枚の戸を途中まで折った姿と、畳む方向の矢印を表示します。左右・上下は角度0°基準で、戸と一緒に回転します。</p>
       `:''}
+      ${!['kitchen','wash','toilet','bath'].includes(selected.type)?'<div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>':''}
       ${isDoor(selected)?'<p class="hint">X/Yは開口の壁芯始点。壁を選んで追加すると位置・角度・壁厚を引き継ぎます。ドアの円弧は90°までの開閉範囲、引き戸の矢印は移動方向です。</p>':''}
       ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
     `}
@@ -929,6 +931,10 @@ function fitPageToDrawing(){
   try{WallModel.page(page)}catch{document.getElementById('page-error').textContent='図面が大きすぎます。幅・高さを200,000mm以内にしてください。';return}
   for(const key of ['width','height','x','y'])document.getElementById('page-'+key).value=String(page[key]);
   applyPageSettings();
+}
+function newDrawing(){
+  if(!confirm('現在の図面を初期状態に戻します。必要な図面は先にJSON保存してください。新規作成しますか？'))return;
+  window.location.reload();
 }
 function loadSample(){
   if(!confirm('現在の図面を1DKのサンプルに置き換えます。必要な図面は先にJSON保存してください。読み込みますか？'))return;
