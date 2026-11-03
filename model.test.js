@@ -6,6 +6,33 @@ const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 
+test('floor and tatami colors validate, preserve defaults and survive save/load',()=>{
+  assert.equal(M.materialColors({type:'flooring'}).base,'#eddbb9');
+  assert.equal(M.materialColors({type:'tatami'}).base,'#d5d8a0');
+  for(const type of ['flooring','tatami']){
+    const f={id:'f',type,x:0,y:0,width:880,height:1760,angle:0,color:'#80a0c0'};
+    assert.deepEqual(M.materialColors(f),{base:'#80a0c0',line:'#66809a',edge:'#405060'});
+    assert.equal(M.normalize({version:3,walls:[],fixtures:[f]}).fixtures[0].color,f.color);
+    for(const color of ['red','#fff','url(test)',null])assert.throws(()=>M.normalize({version:3,walls:[],fixtures:[{...f,color}]}));
+  }
+});
+
+test('color inputs apply to flooring and tatami patterns',()=>{
+  const {run,nodes}=app();
+  for(const type of ['flooring','tatami']){
+    run(`addFixture('${type}')`);
+    assert.ok(nodes.get('properties').innerHTML.includes('type="color"'));
+    for(const [id,value] of Object.entries({pxx:'0',pyy:'0',pww:'880',phh:'1760',pang:'0',plabel:type,pfloorwall:'140',pfloordirection:'0',pcolor:'#80a0c0'}))nodes.set(id,{value});
+    run('applyProps()');assert.equal(run('selected.color'),'#80a0c0');
+    const group=nodes.get('objects').children.find(g=>g.dataset.id===run('selected.id'));
+    const pattern=group.children[0].children[0];
+    assert.equal(pattern.children[0].attrs.fill,'#80a0c0');assert.equal(pattern.children[1].attrs.stroke,'#66809a');
+    if(type==='tatami')assert.equal(group.children[2].attrs.fill,'#405060');
+  }
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures.every(f=>f.color==="#80a0c0")'),true);
+});
+
 test('tatami size presets fill dimensions without discarding edits and preserve square or landscape shapes',()=>{
   const {run,nodes}=app();run('addFixture("tatami")');
   for(const [kind,width,height] of [['kyoma',955,1910],['edoma',880,1760],['danchima',850,1700]]){

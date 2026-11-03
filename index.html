@@ -28,6 +28,7 @@
   svg{display:block;background:#fff;margin:30px;box-shadow:0 1px 5px #999}
   label{display:block;font-size:12px;margin-top:9px;color:#555}
   input,select{width:100%;padding:6px;border:1px solid #aaa;border-radius:3px;background:#fff}
+  input[type="color"]{height:38px;padding:3px;cursor:pointer}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
   .selected{outline:2px solid #1976d2}
   #objects [data-id]{cursor:grab;touch-action:none}
@@ -115,10 +116,10 @@
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
     <h3>床</h3>
-    <button onclick="addFixture('doma')">＋ 土間</button>
     <button onclick="addFixture('flooring')">＋ フローリング</button>
     <button onclick="addFixture('tatami')">＋ 畳</button>
     <button onclick="addFixture('tatamiSquare')">＋ 半畳（正方形）</button>
+    <button onclick="addFixture('doma')">＋ 土間</button>
     <h3>文字</h3>
     <button onclick="addText()">＋ 文字列</button>
     </div>
@@ -520,6 +521,7 @@ function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
 function drawTatami(f){
+  const colors=WallModel.materialColors(f);
   const g=document.createElementNS("http://www.w3.org/2000/svg","g");
       g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
       g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
@@ -527,18 +529,18 @@ function drawTatami(f){
       const id=`tatami-pattern-${data.fixtures.indexOf(f)}`;
       for(const [key,value] of Object.entries({id,width:4,height:4,patternUnits:'userSpaceOnUse'}))pattern.setAttribute(key,value);
       const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      for(const [key,value] of Object.entries({width:4,height:4,fill:'#d5d8a0'}))bg.setAttribute(key,value);
+      for(const [key,value] of Object.entries({width:4,height:4,fill:colors.base}))bg.setAttribute(key,value);
       const weave=document.createElementNS('http://www.w3.org/2000/svg','path');
-      for(const [key,value] of Object.entries({d:'M0 1H4 M0 3H4',stroke:'#b4ba7f','stroke-width':.35}))weave.setAttribute(key,value);
+      for(const [key,value] of Object.entries({d:'M0 1H4 M0 3H4',stroke:colors.line,'stroke-width':.35}))weave.setAttribute(key,value);
       pattern.appendChild(bg);pattern.appendChild(weave);
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
       const mat=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      for(const [key,value] of Object.entries({width:px(f.width),height:px(f.height),fill:`url(#${id})`,stroke:'#7c8555','stroke-width':.6}))mat.setAttribute(key,value);
+      for(const [key,value] of Object.entries({width:px(f.width),height:px(f.height),fill:`url(#${id})`,stroke:f.color?colors.edge:'#7c8555','stroke-width':.6}))mat.setAttribute(key,value);
       g.appendChild(mat);
       const border=Math.min(3,px(Math.min(f.width,f.height)/10));
       for(const x of [0,px(f.width)-border]){
         const edge=document.createElementNS('http://www.w3.org/2000/svg','rect');
-        for(const [key,value] of Object.entries({x,y:0,width:border,height:px(f.height),fill:'#65714b'}))edge.setAttribute(key,value);
+        for(const [key,value] of Object.entries({x,y:0,width:border,height:px(f.height),fill:colors.edge}))edge.setAttribute(key,value);
         g.appendChild(edge);
       }
       objects.appendChild(g);
@@ -563,6 +565,7 @@ function render(){
     for(const [key,value] of Object.entries(box))r.setAttribute(key,px(value));
     r.setAttribute('fill','#ddd');
     if(f.type==='flooring'){
+      const colors=WallModel.materialColors(f);
       const pattern=document.createElementNS('http://www.w3.org/2000/svg','pattern');
       const patternId=`floor-pattern-${data.fixtures.indexOf(f)}`;
       pattern.setAttribute('id',patternId);pattern.setAttribute('patternUnits','userSpaceOnUse');
@@ -570,10 +573,10 @@ function render(){
       // Use a shared world origin so adjoining rectangles have continuous boards.
       pattern.setAttribute('patternTransform',`rotate(${-f.angle||0}) translate(${-px(f.x)},${-px(f.y)}) rotate(${f.floorDirection??0})`);
       const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
-      bg.setAttribute('width',182);bg.setAttribute('height',30);bg.setAttribute('fill','#eddbb9');pattern.appendChild(bg);
+      bg.setAttribute('width',182);bg.setAttribute('height',30);bg.setAttribute('fill',colors.base);pattern.appendChild(bg);
       const joints=document.createElementNS('http://www.w3.org/2000/svg','path');
       joints.setAttribute('d','M0 0H182 M0 15H182 M0 0V15 M91 15V30');
-      joints.setAttribute('stroke','#c2a77e');joints.setAttribute('stroke-width',.5);joints.setAttribute('fill','none');pattern.appendChild(joints);
+      joints.setAttribute('stroke',colors.line);joints.setAttribute('stroke-width',.5);joints.setAttribute('fill','none');pattern.appendChild(joints);
       const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
       r.setAttribute('fill',`url(#${patternId})`);
     }
@@ -810,6 +813,7 @@ function showProps(){
       </div>
       ${!['doma','flooring'].includes(selected.type)?`<label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">`:''}
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${['flooring','tatami'].includes(selected.type)?`<label for="pcolor">色</label><input id="pcolor" type="color" value="${esc(WallModel.materialColors(selected).base)}"><p class="hint">色を選んで「値を反映」で変更します。</p>`:''}
       ${selected.type==='tatami'?`
         <label>畳のサイズ</label>
         <button onclick="setTatamiSize('kyoma')">京間：955 × 1,910mm</button>
@@ -909,6 +913,11 @@ function applyProps(){
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
   }
+  let materialColor;
+  if(['flooring','tatami'].includes(selected.type)){
+    materialColor=q('pcolor')?.value??WallModel.materialColors(selected).base;
+    try{WallModel.materialColors({...selected,color:materialColor})}catch{alert('色を選択してください。');return}
+  }
   if(['doma','flooring'].includes(selected.type)){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pfloorwall').value,
       connections:['top','bottom','left','right'].filter(edge=>q('pfloor-'+edge)?.value==='floor')};
@@ -941,6 +950,7 @@ function applyProps(){
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
     selected.angle=['doma','flooring'].includes(selected.type)?0:+q("pang").value;selected.label=q("plabel").value;
+    if(materialColor!==undefined)selected.color=materialColor;
     if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);

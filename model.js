@@ -183,6 +183,13 @@
     const center=v=>Math.round((v-455)/910)*910+455;
     return {x:center(f.x+dx)-dx,y:center(f.y+dy)-dy};
   }
+  function materialColors(f){
+    const defaults=f.type==='tatami'?{base:'#d5d8a0',line:'#b4ba7f',edge:'#65714b'}:{base:'#eddbb9',line:'#c2a77e',edge:'#c2a77e'};
+    if(f.color===undefined)return defaults;
+    if(typeof f.color!=='string'||!/^#[0-9a-f]{6}$/i.test(f.color))throw Error('Invalid material color');
+    const shade=factor=>'#'+[1,3,5].map(i=>Math.round(parseInt(f.color.slice(i,i+2),16)*factor).toString(16).padStart(2,'0')).join('');
+    return {base:f.color,line:shade(.8),edge:shade(.5)};
+  }
   function floorArea(f){
     const thickness=f.wallThickness??140;
     if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
@@ -240,6 +247,7 @@
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
       if(o.type==='bath')bath(o);
       if(['doma','flooring'].includes(o.type)){floorArea(o);o.angle=0}
+      if(['flooring','tatami'].includes(o.type))materialColors(o);
       if(o.type==='kitchen'&&o.kitchenKind!==undefined&&!['counter','sink','stove','corner','combined'].includes(o.kitchenKind))throw Error('Invalid kitchen kind');
       return o;
     })};
@@ -254,7 +262,7 @@
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,snapTatami,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,materialColors,snapTatami,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
