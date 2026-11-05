@@ -17,6 +17,30 @@ test('floor and tatami colors validate, preserve defaults and survive save/load'
   }
 });
 
+test('unrelated material edits preserve default palettes and explicit colors',()=>{
+  for(const type of ['flooring','tatami']){
+    const {run,nodes}=app();run(`addFixture('${type}')`);
+    const initialPalette=run('JSON.stringify(WallModel.materialColors(selected))');
+    const defaultColor=run('WallModel.materialColors(selected).base');
+    for(const [id,value] of Object.entries({pxx:'123',pyy:'456',pww:'900',phh:'1800',pang:'0',plabel:type,pfloorwall:'140',pfloordirection:'0',pcolor:defaultColor.toUpperCase()}))nodes.set(id,{value});
+    run('applyProps()');
+    assert.equal(run('selected.x'),123);assert.equal(run('selected.width'),900);
+    assert.equal(run('Object.hasOwn(selected,"color")'),false);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),initialPalette);
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+    assert.equal(run('Object.hasOwn(selected,"color")'),false);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),initialPalette);
+    nodes.get('pcolor').value='#80a0c0';run('applyProps()');
+    assert.equal(run('selected.color'),'#80a0c0');
+    nodes.get('pcolor').value=defaultColor;run('applyProps()');
+    assert.equal(run('selected.color'),defaultColor); // Explicit color stays explicit, even at the default base.
+    const explicitPalette=run('JSON.stringify(WallModel.materialColors(selected))');
+    nodes.get('pxx').value='789';run('applyProps()');
+    assert.equal(run('selected.color'),defaultColor);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),explicitPalette);
+  }
+});
+
 test('color inputs apply to flooring and tatami patterns',()=>{
   const {run,nodes}=app();
   for(const type of ['flooring','tatami']){

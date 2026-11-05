@@ -950,7 +950,11 @@ function applyProps(){
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
     selected.angle=['doma','flooring'].includes(selected.type)?0:+q("pang").value;selected.label=q("plabel").value;
-    if(materialColor!==undefined)selected.color=materialColor;
+    if(materialColor!==undefined &&
+      (selected.color!==undefined ||
+       materialColor.toLowerCase()!==WallModel.materialColors(selected).base.toLowerCase())){
+      selected.color=materialColor;
+    }
     if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
