@@ -25,13 +25,18 @@
   h3{font-size:13px;margin:8px 0}
   button{width:100%;padding:8px;margin:3px 0;border:1px solid #bbb;background:#fff;border-radius:4px;text-align:left;cursor:pointer}
   button:hover{background:#eee}
+  .left-pane{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
+  .parts-list{flex:1;min-height:0;overflow:auto;padding:12px}
+  .conversion-table{flex:none;padding:12px;border-top:1px solid #ccc;background:#f3f3f3}
+  .conversion-content{max-height: min(40vh,320px);overflow:auto}
+  .conversion-table summary{cursor:pointer;font-size:13px;font-weight:bold;padding:8px;border:1px solid #bbb;border-radius:4px;background:#fff}
   .hint{font-size:11px;color:#666;line-height:1.5;margin:8px 0}
   .canvas{position:relative;overflow:auto;background:#ddd}
   svg{display:block;background:#fff;margin:30px;box-shadow:0 1px 5px #999}
   label{display:block;font-size:12px;margin-top:9px;color:#555}
   input,select{width:100%;padding:6px;border:1px solid #aaa;border-radius:3px;background:#fff}
+  input[type="color"]{height:38px;padding:3px;cursor:pointer}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-  .status{position:absolute;left:12px;bottom:10px;background:#fff;padding:5px 8px;border:1px solid #bbb;border-radius:3px;font-size:11px}
   .selected{outline:2px solid #1976d2}
   #objects [data-id]{cursor:grab;touch-action:none}
   #objects [data-id]:active{cursor:grabbing}
@@ -58,7 +63,7 @@
   @page{size:A4 landscape;margin:10mm}
   @media print{
     html,body{margin:0;padding:0;background:#fff;height:auto;display:block}
-    header,aside,.status,.view-tools,dialog,.ad-area{display:none!important}
+    header,aside,.view-tools,dialog,.ad-area{display:none!important}
     dialog::backdrop{display:none}
     main{display:block;height:auto}
     .canvas{position:static;overflow:visible;background:#fff}
@@ -79,6 +84,7 @@
   <details class="app-menu" id="app-menu" title="">
     <summary id="menu-toggle">☰ メニュー</summary>
     <nav class="menu-panel" aria-label="ファイルとヘルプ">
+      <button onclick="newDrawing()">新規作成</button>
       <button onclick="closeMenu();saveJSON()">JSON保存</button>
       <p class="hint">自動保存はありません。終了・再読み込みの前に保存してください。</p>
       <button onclick="closeMenu();loadJSON()">JSON読込</button>
@@ -94,7 +100,8 @@
   </details>
 </header>
 <main>
-  <aside>
+  <aside class="left-pane">
+    <div class="parts-list">
     <h3>壁</h3>
     <button onclick="newWall()">＋ 壁</button>
     <button onclick="newWall('railing')">＋ 手すり壁</button>
@@ -120,6 +127,33 @@
     <button onclick="addFixture('stairs')">＋ 階段</button>
     <button onclick="addFixture('turnStairs')">＋ 90°曲がり階段</button>
     <button onclick="addFixture('landing')">＋ 踊り場</button>
+    <h3>床</h3>
+    <button onclick="addFixture('flooring')">＋ フローリング</button>
+    <button onclick="addFixture('tatami')">＋ 畳</button>
+    <button onclick="addFixture('tatamiSquare')">＋ 半畳（正方形）</button>
+    <button onclick="addFixture('doma')">＋ 土間</button>
+    <h3>文字</h3>
+    <button onclick="addText()">＋ 文字列</button>
+    </div>
+    <details class="conversion-table">
+      <summary>間 → mm 換算表</summary>
+      <div class="conversion-content">
+    <p class="hint">1間＝1,820mm（この図面の基準）</p>
+    <table aria-label="間からミリメートルへの換算表" style="width:100%;font-size:13px;text-align:left">
+      <thead><tr><th>間</th><th>mm</th></tr></thead>
+      <tbody>
+        <tr><td>¼間</td><td>455</td></tr>
+        <tr><td>半間</td><td>910</td></tr>
+        <tr><td>1間</td><td>1,820</td></tr>
+        <tr><td>1間半</td><td>2,730</td></tr>
+        <tr><td>2間</td><td>3,640</td></tr>
+        <tr><td>2間半</td><td>4,550</td></tr>
+        <tr><td>3間</td><td>5,460</td></tr>
+        <tr><td>4間</td><td>7,280</td></tr>
+      </tbody>
+    </table>
+      </div>
+    </details>
   </aside>
 
   <section class="canvas" id="canvas">
@@ -144,7 +178,6 @@
       <rect id="grid-background" width="1200" height="850" fill="url(#grid910)"/>
       <g id="objects"></g>
     </svg>
-    <div class="status" id="status">910mmグリッド / 選択なし</div>
   </section>
 
   <aside class="right">
@@ -171,14 +204,18 @@
   <ol>
     <li>左側から壁や部品を追加します。起動時のサンプル壁は、不要なら選択して削除できます。</li>
     <li>図面上でドラッグして配置します。壁は455mmグリッドや他の壁へ吸着します。</li>
+    <li>壁の両端の青い丸をドラッグすると、長さを455mm単位、向きを90°単位で変更できます。</li>
     <li>右側で寸法・座標・角度などを入力し、「値を反映」を押します。</li>
     <li>メニューの「JSON保存」で図面を保存します。</li>
   </ol>
-  <p><strong>自動保存はありません。</strong>ページを閉じる・再読み込みする前に保存してください。「JSON読込」は現在の図面を置き換えます。</p>
+  <p><strong>自動保存はありません。</strong>新規作成・ページ終了・再読み込みの前に保存してください。「新規作成」は起動時の壁2本の状態に戻り、「JSON読込」は現在の図面を置き換えます。</p>
+  <h3>床・畳・文字列</h3>
+  <p>土間・フローリングは幅と奥行きで形を決め、各辺の「壁に接する／床につながる」を選びます。床の回転はできません。畳は1枚ずつ配置し、寸法変更・回転・壁面への吸着ができます。フローリングと畳は色も変更できます。</p>
+  <p>「＋ 文字列」で1行の文字を配置できます。文字サイズと内容から幅を自動調整します。左ペイン下端の換算表はクリックで開閉できます。</p>
   <h3>キーボード操作</h3>
   <table><thead><tr><th>キー</th><th>操作</th></tr></thead><tbody>
     <tr><td>W</td><td>壁を追加</td></tr><tr><td>T / B / K / D</td><td>トイレ / 浴室 / キッチン作業台 / ドアを追加</td></tr>
-    <tr><td>R / Shift + R</td><td>選択部品を90° / −90°回転</td></tr><tr><td>矢印キー</td><td>91mm単位で移動</td></tr>
+    <tr><td>R / Shift + R</td><td>選択部品を90° / −90°回転（土間・フローリングを除く）</td></tr><tr><td>矢印キー</td><td>91mm単位で移動</td></tr>
     <tr><td>Delete</td><td>選択部品を削除</td></tr><tr><td>F2</td><td>座標入力へ移動</td></tr>
   </tbody></table>
   <h3>寸法・出力</h3>
@@ -190,7 +227,8 @@
 <dialog id="about-dialog" aria-labelledby="about-title">
   <button class="close-dialog" onclick="closeAppDialog()" autofocus>閉じる</button>
   <h2 id="about-title">グリどり（gridori）</h2>
-  <p><strong>v0.1.0 — MVP</strong></p>
+  <p><strong>v0.2.0</strong></p>
+  <p><a href="CHANGELOG.md" target="_blank" rel="noopener">変更履歴（別タブ）</a></p>
   <p>壁をグリッドに配置することで間取りを作図する、ブラウザで動作する2Dのグリッド間取りエディタです。</p>
   <p>日本の家屋で使われる910mmモジュールを基本とし、壁・建具・住宅設備を配置して平面図を作成できます。</p>
   <h3>既知の制限</h3>
@@ -199,7 +237,7 @@
     <li>配置した建具・設備は、後から壁を動かしても自動追従しません。</li>
     <li>印刷は用紙に合わせて拡大縮小され、固定縮尺ではありません。</li>
   </ul>
-  <p>不具合の報告には、バージョン（v0.1.0）、ブラウザ・端末、再現手順を添えてください。</p>
+  <p>不具合の報告には、バージョン（v0.2.0）、ブラウザ・端末、再現手順を添えてください。</p>
   <h3>ライセンス</h3>
   <p>GNU General Public License v3.0（GPL-3.0）</p>
   <p><a href="LICENSE" target="_blank" rel="noopener">ライセンス全文（別タブ）</a></p>
@@ -271,10 +309,33 @@ function newWall(kind='normal'){
   if(kind==='railing')n.wallKind='railing';
   data.walls.push(n); selected=n; render();
 }
+function addText(){
+  const n={id:nextId('f'),type:'text',x:1365,y:1365,angle:0,label:'文字列',fontSize:150};
+  Object.assign(n,WallModel.textSpec(n));
+  data.fixtures.push(n);selected=n;render();
+}
+function drawText(g,f){
+  Object.assign(f,WallModel.textSpec(f));
+  g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`);
+  g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+  const hit=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  hit.setAttribute('fill','transparent');hit.setAttribute('height',px(f.height));g.appendChild(hit);
+  const text=document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('x',px(f.fontSize*0.1));text.setAttribute('y',px(f.fontSize));
+  text.setAttribute('font-size',px(f.fontSize));text.setAttribute('fill','#222');
+  text.setAttribute('xml:space','preserve');text.style.whiteSpace='pre';text.textContent=f.label;
+  g.appendChild(text);objects.appendChild(g);
+  // Measure the rendered font so mixed Japanese/Latin text gets its natural width.
+  const measured=text.getComputedTextLength?.();
+  if(Number.isFinite(measured)&&measured>0)f.width=Math.ceil(mm(measured)+f.fontSize*0.2);
+  hit.setAttribute('width',px(f.width));
+}
 function addFixture(type){
   if(type==='kitchen'){addKitchen('counter');return}
+  const squareTatami=type==='tatamiSquare';
+  if(squareTatami)type='tatami';
   const defs={
-    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], kitchen:[2550,650,"キッチン"],
+    toilet:[380,650,"トイレ"], bath:[1820,1820,"UB"], doma:[1820,910,"土間"], flooring:[1820,1820,"フローリング"], tatami:[880,1760,"畳"], kitchen:[2550,650,"キッチン"],
     wash:[750,910*2/3,"洗面"], washer:[640,640,"洗濯機"], door:[800,140,"ドア"],
     slidingDoor:[800,140,"引き戸"], doubleSlidingDoor:[1650,140,"引き違い戸"],
     foldingDoor:[800,140,"折戸"], turnStairs:[910,910,"曲がり階段"],
@@ -282,7 +343,15 @@ function addFixture(type){
   };
   const d=defs[type]||[910,910,type];
   const n={id:nextId("f"),type,x:1365,y:1365,width:d[0],height:d[1],label:d[2],angle:0};
+  if(squareTatami){n.height=880;n.label='半畳'}
   if(type==='toilet')n.origin='center';
+  if(['doma','flooring'].includes(type)){
+    n.x=910;n.y=910;n.wallThickness=selected?.type==='wall'?selected.thickness:140;
+    if(selected?.type==='wall'){
+      n.x=selected.x;n.y=selected.y;n.width=Math.min(n.width,selected.length);
+    }
+    try{WallModel.floorArea(n)}catch{alert('床の幅・奥行きより壁厚を小さくしてください。');return}
+  }
   if(type==='wash'){
     n.origin='backCenter';
     if(selected?.type==='wall'){
@@ -501,14 +570,68 @@ function drawWindow(g,f){
 function all(){return [...data.walls,...data.fixtures]}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
+function drawTatami(f){
+  const colors=WallModel.materialColors(f);
+  const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+      g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0} ${px(f.width/2)} ${px(f.height/2)})`);
+      g.dataset.id=f.id;g.addEventListener('pointerdown',e=>startDrag(e,f));
+      const pattern=document.createElementNS('http://www.w3.org/2000/svg','pattern');
+      const id=`tatami-pattern-${data.fixtures.indexOf(f)}`;
+      for(const [key,value] of Object.entries({id,width:4,height:4,patternUnits:'userSpaceOnUse'}))pattern.setAttribute(key,value);
+      const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      for(const [key,value] of Object.entries({width:4,height:4,fill:colors.base}))bg.setAttribute(key,value);
+      const weave=document.createElementNS('http://www.w3.org/2000/svg','path');
+      for(const [key,value] of Object.entries({d:'M0 1H4 M0 3H4',stroke:colors.line,'stroke-width':.35}))weave.setAttribute(key,value);
+      pattern.appendChild(bg);pattern.appendChild(weave);
+      const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
+      const mat=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      for(const [key,value] of Object.entries({width:px(f.width),height:px(f.height),fill:`url(#${id})`,stroke:f.color?colors.edge:'#7c8555','stroke-width':.6}))mat.setAttribute(key,value);
+      g.appendChild(mat);
+      const border=Math.min(3,px(Math.min(f.width,f.height)/10));
+      for(const x of [0,px(f.width)-border]){
+        const edge=document.createElementNS('http://www.w3.org/2000/svg','rect');
+        for(const [key,value] of Object.entries({x,y:0,width:border,height:px(f.height),fill:colors.edge}))edge.setAttribute(key,value);
+        g.appendChild(edge);
+      }
+      objects.appendChild(g);
+}
 function render(){
-  updateSaveState();
+  all().forEach(WallModel.integerMM);
+  (data.dimensions??[]).forEach(WallModel.integerMM);
   const page=WallModel.page(data.page);
   svg.setAttribute('width',px(page.width));svg.setAttribute('height',px(page.height));
   svg.setAttribute('viewBox',`${px(page.x)} ${px(page.y)} ${px(page.width)} ${px(page.height)}`);
   const background=document.getElementById('grid-background');
   for(const [key,value] of Object.entries(page))background.setAttribute(key,px(value));
   objects.innerHTML="";
+  // Floor areas stay behind all walls, openings and equipment.
+  for(const f of data.fixtures.filter(f=>['doma','flooring','tatami'].includes(f.type))){
+    if(f.type==='tatami'){drawTatami(f);continue}
+    f.angle=0;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g'),box=WallModel.floorArea(f);
+    g.dataset.id=f.id;g.setAttribute('transform',`translate(${px(f.x)},${px(f.y)}) rotate(${f.angle||0})`);
+    g.addEventListener('pointerdown',e=>startDrag(e,f));
+    const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    for(const [key,value] of Object.entries(box))r.setAttribute(key,px(value));
+    r.setAttribute('fill','#ddd');
+    if(f.type==='flooring'){
+      const colors=WallModel.materialColors(f);
+      const pattern=document.createElementNS('http://www.w3.org/2000/svg','pattern');
+      const patternId=`floor-pattern-${data.fixtures.indexOf(f)}`;
+      pattern.setAttribute('id',patternId);pattern.setAttribute('patternUnits','userSpaceOnUse');
+      pattern.setAttribute('width',182);pattern.setAttribute('height',30);
+      // Use a shared world origin so adjoining rectangles have continuous boards.
+      pattern.setAttribute('patternTransform',`rotate(${-f.angle||0}) translate(${-px(f.x)},${-px(f.y)}) rotate(${f.floorDirection??0})`);
+      const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      bg.setAttribute('width',182);bg.setAttribute('height',30);bg.setAttribute('fill',colors.base);pattern.appendChild(bg);
+      const joints=document.createElementNS('http://www.w3.org/2000/svg','path');
+      joints.setAttribute('d','M0 0H182 M0 15H182 M0 0V15 M91 15V30');
+      joints.setAttribute('stroke',colors.line);joints.setAttribute('stroke-width',.5);joints.setAttribute('fill','none');pattern.appendChild(joints);
+      const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');defs.appendChild(pattern);g.appendChild(defs);
+      r.setAttribute('fill',`url(#${patternId})`);
+    }
+    g.appendChild(r);objects.appendChild(g);
+  }
   // Normal walls cover railing walls at shared joints, regardless of creation order.
   const wallsInDrawOrder=[...data.walls.filter(w=>w.wallKind==='railing'),...data.walls.filter(w=>w.wallKind!=='railing')];
   for(const w of wallsInDrawOrder){
@@ -539,7 +662,9 @@ function render(){
   // Draw bathroom floors before doors and other fixtures, independent of creation order.
   const fixturesInDrawOrder=[...data.fixtures.filter(f=>f.type==='bath'),...data.fixtures.filter(f=>f.type!=='bath')];
   for(const f of fixturesInDrawOrder){
+    if(['doma','flooring','tatami'].includes(f.type))continue;
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
+    if(f.type==='text'){drawText(g,f);continue}
     if(f.type==='wash'||f.type==='kitchen'){
       const back=WallModel.washBack(f);
       g.setAttribute('transform',`translate(${px(back.x)},${px(back.y)}) rotate(${f.angle||0})`);
@@ -588,7 +713,22 @@ function render(){
     marker.setAttribute("r",6);marker.setAttribute("fill","none");marker.setAttribute("stroke","#e07800");
     marker.setAttribute("stroke-width",2);marker.style.pointerEvents="none";objects.appendChild(marker);
   }
+  updateSaveState();
   renderDimensions();
+  if(selected?.type==='wall'){
+    WallModel.endpoints(selected).forEach((point,edge)=>{
+      const handle=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      handle.setAttribute('class','editor-guide');
+      handle.setAttribute('cx',px(point.x));handle.setAttribute('cy',px(point.y));
+      handle.setAttribute('r',7);handle.setAttribute('fill','#fff');
+      handle.setAttribute('stroke','#1976d2');handle.setAttribute('stroke-width',2);
+      handle.style.cursor='grab';handle.style.touchAction='none';
+      const title=document.createElementNS('http://www.w3.org/2000/svg','title');
+      title.textContent='ドラッグで壁の長さ（455mm単位）・向き（90°単位）を調整';handle.appendChild(title);
+      handle.addEventListener('pointerdown',e=>startResize(e,selected,edge));
+      objects.appendChild(handle);
+    });
+  }
   updateSelection();
 }
 function addDimension(kind){
@@ -607,7 +747,7 @@ function renderDimensions(){
   const rows=[];
   for(const [index,d] of (data.dimensions??[]).entries()){
     const measured=WallModel.dimension(d,data.walls),name=d.kind==='outer'?'外寸':'内寸';
-    const label=measured?`${name} ${Number(measured.value.toFixed(2))} mm`:`${name}：測定不可（壁の平行・重なりを確認）`;
+    const label=measured?`${name} ${Math.round(measured.value)} mm`:`${name}：測定不可（壁の平行・重なりを確認）`;
     const inputId=`dimension-offset-${index}`,labelId=`dimension-offset-label-${index}`,summaryId=`dimension-summary-${index}`;
     rows.push(`<p class="hint" id="${summaryId}">${esc(d.wallA)} → ${esc(d.wallB)}：${label}</p><label id="${labelId}" for="${inputId}">寸法線の位置（最初の壁の始点から mm）</label><input id="${inputId}" aria-labelledby="${summaryId} ${labelId}" type="number" value="${d.offset}" onchange="editDimension(${index},this.value)"><button aria-label="${esc(d.wallA)}から${esc(d.wallB)}の${name}の寸法線を削除" onclick="deleteDimension(${index})">この寸法線を削除</button>`);
     if(!measured)continue;
@@ -636,6 +776,13 @@ function renderDimensions(){
   document.getElementById('dimensions').innerHTML=rows.join('')||'<p class="hint">壁を選択し、測定先の壁を指定して内寸・外寸を追加できます。</p>';
 }
 let dragState=null, snapTarget=null;
+function startResize(e,o,edge){
+  if(e.button!==0)return;
+  e.preventDefault();e.stopPropagation();
+  dragState={obj:o,resize:true,edge,original:{...o}};
+  window.addEventListener('pointermove',dragMove);window.addEventListener('pointerup',dragEnd);
+  window.addEventListener('pointercancel',dragEnd);
+}
 function svgPoint(e){ const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse()); return {x:mm(p.x),y:mm(p.y)}; }
 function startDrag(e,o){
   if(e.button!==0)return;
@@ -646,8 +793,15 @@ function startDrag(e,o){
 }
 function dragMove(e){
   if(!dragState)return;
+  if(dragState.resize){
+    const d=dragState;
+    Object.assign(d.obj,WallModel.resizeWall(d.original,d.edge,svgPoint(e)));
+    render();return;
+  }
   const p=svgPoint(e),d=dragState,x=d.origX+p.x-d.startX,y=d.origY+p.y-d.startY;
   const position=d.obj.type==='wall'?WallModel.snapWall({...d.obj,x,y},data.walls):
+    d.obj.type==='tatami'?WallModel.snapTatami({...d.obj,x,y},data.walls):
+    ['doma','flooring'].includes(d.obj.type)?{x:Math.round(x/455)*455,y:Math.round(y/455)*455}:
     d.obj.type==='toilet'?WallModel.snapToilet({...d.obj,x,y}):
     d.obj.type==='kitchen'?WallModel.snapKitchen({...d.obj,x,y},data.walls):
     d.obj.type==='wash'?WallModel.snapWash({...d.obj,x,y},data.walls):
@@ -663,14 +817,26 @@ function updateSelection(){
   document.querySelectorAll('#objects [data-id]').forEach(e=>{
     if(selected && e.dataset.id===selected.id)e.classList.add('selected'); else e.classList.remove('selected');
   });
-  document.getElementById('status').textContent=selected?
-    `${selected.type} / x=${selected.x} y=${selected.y} / ${selected.type==='wall'?`設定長 ${selected.length} / 表示長 ${selected.length+selected.thickness}`:`${selected.width}×${selected.height}`} mm`:
-    "910mmグリッド / 選択なし";
   showProps();
 }
 function showProps(){
   const p=document.getElementById('properties');
   if(!selected){p.innerHTML='<div class="empty">図面上の部品を選択すると、ここで数値入力できます。</div>';return}
+  if(selected.type==='text'){
+    p.innerHTML=`
+      <label for="ptext">文字列（1行）</label><input id="ptext" value="${esc(selected.label)}">
+      <label for="pfontsize">文字サイズ (mm)</label><input id="pfontsize" type="number" min="1" max="10000" step="1" value="${selected.fontSize}">
+      <div class="row">
+        <div><label for="pxx">X (mm)</label><input id="pxx" type="number" value="${selected.x}"></div>
+        <div><label for="pyy">Y (mm)</label><input id="pyy" type="number" value="${selected.y}"></div>
+      </div>
+      <label for="pang">角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      <p class="hint">幅は文字列と文字サイズに合わせて自動調整します。X/Yは回転の中心となる左上位置です。</p>
+      <button onclick="applyProps()">値を反映</button>
+      <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
+      <button onclick="deleteSelected()">削除</button>`;
+    return;
+  }
   const isWall=selected.type==="wall";
   p.innerHTML=`
     ${isWall?`<label for="pwallid">壁ID</label><input id="pwallid" value="${esc(selected.id)}" readonly>`:''}
@@ -690,14 +856,29 @@ function showProps(){
       </div>
       <div class="row"><button onclick="changeWallLength(-455)">−455mm</button><button onclick="changeWallLength(455)">＋455mm</button></div>
       <div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>
-      <p class="hint">0°＝右方向、90°＝下方向。壁は始点＋長さ＋角度＋厚さで管理します。</p>
+      <p class="hint">両端の青い丸をドラッグすると、反対側の端を固定して長さを455mm（半グリッド）単位、向きをドラッグ開始時から90°単位で調整できます。最短455mm。0°＝右方向、90°＝下方向。</p>
     `:`
       <div class="row">
         <div><label>幅 (mm)</label><input id="pww" type="number" value="${selected.width}"></div>
         <div><label>${isOpening(selected)?'壁厚・奥行き':'高さ'} (mm)</label><input id="phh" type="number" value="${selected.height}"></div>
       </div>
-      <label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">
+      ${!['doma','flooring'].includes(selected.type)?`<label>角度 (°)</label><input id="pang" type="number" value="${selected.angle||0}">`:''}
       <label>表示名</label><input id="plabel" value="${esc(selected.label)}">
+      ${['flooring','tatami'].includes(selected.type)?`<label for="pcolor">色</label><input id="pcolor" type="color" value="${esc(WallModel.materialColors(selected).base)}"><p class="hint">色を選んで「値を反映」で変更します。</p>`:''}
+      ${selected.type==='tatami'?`
+        <label>畳のサイズ</label>
+        <button onclick="setTatamiSize('kyoma')">京間：955 × 1,910mm</button>
+        <button onclick="setTatamiSize('edoma')">江戸間：880 × 1,760mm</button>
+        <button onclick="setTatamiSize('danchima')">団地間：850 × 1,700mm</button>
+        <p class="hint">ボタンで寸法を入力し「値を反映」。正方形は各規格の短辺×短辺になります。寸法は自由に変更でき、ドラッグで壁面に吸着します。</p>
+      `:''}
+      ${['doma','flooring'].includes(selected.type)?`
+        <label>周囲の壁厚 (mm)</label><input id="pfloorwall" type="number" min="0" value="${selected.wallThickness??140}">
+        <label>各辺の接続（図面の上下左右）</label>
+        ${[['top','上'],['bottom','下'],['left','左'],['right','右']].map(([edge,label])=>`<label for="pfloor-${edge}">${label}の辺</label><select id="pfloor-${edge}"><option value="wall" ${!(selected.connections??[]).includes(edge)?'selected':''}>壁に接する</option><option value="floor" ${(selected.connections??[]).includes(edge)?'selected':''}>床につながる</option></select>`).join('')}
+        ${selected.type==='flooring'?`<label for="pfloordirection">板の方向（図面基準）</label><select id="pfloordirection"><option value="0" ${!selected.floorDirection?'selected':''}>横方向</option><option value="90" ${selected.floorDirection===90?'selected':''}>縦方向</option></select>`:''}
+        <p class="hint">床は回転しません。幅と高さ（奥行き）で縦長・横長を調整します。各辺は図面の上下左右に対応します。「壁に接する」辺だけ壁厚の半分を内側へ寄せます。接続する床の両側を「床につながる」にして座標を合わせてください。同じ向きのフローリングは模様もつながります。X/Yは左上の壁芯交点です。ドラッグは455mm単位で、壁の変更には自動追従しません。</p>
+      `:''}
       ${selected.type==='kitchen'?`
         <label>キッチン部品</label><select id="pkitchen">${[['counter','作業台'],['sink','シンク台'],['stove','コンロ台'],['corner','コーナー'],['combined','一体型（シンク＋コンロ）']].map(([value,label])=>`<option value="${value}" ${(selected.kitchenKind??'combined')===value?'selected':''}>${label}</option>`).join('')}</select>
         <label>コーナーの壁側（角度0°基準）</label><select id="pcornerSide"><option value="right" ${selected.cornerSide!=='left'?'selected':''}>背面（上）＋右側</option><option value="left" ${selected.cornerSide==='left'?'selected':''}>背面（上）＋左側</option></select>
@@ -756,6 +937,7 @@ function showProps(){
         <select id="pfoldSide"><option value="1" ${selected.foldSide!==-1?'selected':''}>壁の下側</option><option value="-1" ${selected.foldSide===-1?'selected':''}>壁の上側</option></select>
         <p class="hint">2枚の戸を途中まで折った姿と、畳む方向の矢印を表示します。左右・上下は角度0°基準で、戸と一緒に回転します。</p>
       `:''}
+      ${!['kitchen','wash','toilet','bath','doma','flooring'].includes(selected.type)?'<div class="row"><button onclick="rotateSelected(-90)">↶ 90°</button><button onclick="rotateSelected(90)">↷ 90°</button></div>':''}
       ${isDoor(selected)?'<p class="hint">X/Yは開口の壁芯始点。壁を選んで追加すると位置・角度・壁厚を引き継ぎます。ドアの円弧は90°までの開閉範囲、引き戸の矢印は移動方向です。</p>':''}
       ${isWindow(selected)?'<p class="hint">窓は壁厚全体を開口とし、その中央にサッシを描きます。壁を選んで追加すると、その壁の位置・角度・壁厚を使います。追加後は独立して移動・編集できます。</p>':''}
     `}
@@ -767,10 +949,34 @@ function showProps(){
 function applyProps(){
   const q=id=>document.getElementById(id);
   if(!selected)return;
+  if(selected.type==='text'){
+    const ids=['pxx','pyy','pang','pfontsize'];
+    if(ids.some(id=>q(id).value.trim()===''||!Number.isFinite(Number(q(id).value)))){alert('座標・角度・文字サイズは数値で入力してください。');return}
+    const next={...selected,x:Math.round(+q('pxx').value),y:Math.round(+q('pyy').value),angle:+q('pang').value,label:q('ptext').value,fontSize:+q('pfontsize').value};
+    try{Object.assign(next,WallModel.textSpec(next))}catch{alert('文字サイズは1〜10,000mmで入力してください。');return}
+    Object.assign(selected,next);render();return;
+  }
   const inputs=[...document.querySelectorAll('#properties input[type="number"]')];
+  inputs.filter(i=>i.id!=='pang'&&i.id!=='psteps').forEach(i=>{
+    if(i.value.trim()!==''&&Number.isFinite(Number(i.value)))i.value=String(Math.round(Number(i.value)));
+  });
   if(inputs.some(i=>i.value.trim()===''||!Number.isFinite(Number(i.value))) ||
     (selected.type==='wall'?["plen","pth"]:["pww","phh"]).some(id=>Number(q(id).value)<=0)){
     alert("座標・角度は有限の数値、寸法は0より大きい数値で入力してください。");return;
+  }
+  let materialColor;
+  if(['flooring','tatami'].includes(selected.type)){
+    materialColor=q('pcolor')?.value??WallModel.materialColors(selected).base;
+    try{WallModel.materialColors({...selected,color:materialColor})}catch{alert('色を選択してください。');return}
+  }
+  if(['doma','flooring'].includes(selected.type)){
+    const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pfloorwall').value,
+      connections:['top','bottom','left','right'].filter(edge=>q('pfloor-'+edge)?.value==='floor')};
+    if(selected.type==='flooring')next.floorDirection=Number(q('pfloordirection').value);
+    try{WallModel.floorArea(next)}catch{alert('壁厚は0以上かつ床の幅・奥行き未満で入力してください。');return}
+    selected.wallThickness=next.wallThickness;
+    selected.connections=next.connections;
+    if(selected.type==='flooring')selected.floorDirection=next.floorDirection;
   }
   if(selected.type==='bath'){
     const next={...selected,width:+q('pww').value,height:+q('phh').value,wallThickness:+q('pbathwall').value};
@@ -794,7 +1000,12 @@ function applyProps(){
     selected.thickness=+q("pth").value;
   } else {
     selected.width=+q("pww").value;selected.height=+q("phh").value;
-    selected.angle=+q("pang").value;selected.label=q("plabel").value;
+    selected.angle=['doma','flooring'].includes(selected.type)?0:+q("pang").value;selected.label=q("plabel").value;
+    if(materialColor!==undefined &&
+      (selected.color!==undefined ||
+       materialColor.toLowerCase()!==WallModel.materialColors(selected).base.toLowerCase())){
+      selected.color=materialColor;
+    }
     if(selected.type==='kitchen'){selected.kitchenKind=q('pkitchen').value;selected.cornerSide=q('pcornerSide')?.value==='left'?'left':'right'}
     if(selected.type==='door'){
       selected.handing=q('phanding').value;selected.swingSide=Number(q('pswing').value);
@@ -808,13 +1019,22 @@ function applyProps(){
   }
   render();
 }
+function setTatamiSize(kind){
+  if(selected?.type!=='tatami')return;
+  const sizes={kyoma:[955,1910],edoma:[880,1760],danchima:[850,1700]},size=sizes[kind];
+  if(!size)return;
+  const w=document.getElementById('pww'),h=document.getElementById('phh');
+  const square=Number(w.value)===Number(h.value),landscape=Number(w.value)>Number(h.value);
+  w.value=String(landscape?size[1]:size[0]);
+  h.value=String(square?size[0]:landscape?size[0]:size[1]);
+}
 function changeWallLength(delta){
   if(!selected || selected.type!=="wall")return;
   selected.length=Math.max(1, selected.length+delta);
   render();
 }
 function rotateSelected(delta){
-  if(!selected)return;
+  if(!selected||['doma','flooring'].includes(selected.type))return;
   selected.angle=((selected.angle||0)+delta)%360;
   if(selected.angle<0)selected.angle+=360;
   render();
@@ -878,6 +1098,10 @@ function fitPageToDrawing(){
   for(const key of ['width','height','x','y'])document.getElementById('page-'+key).value=String(page[key]);
   applyPageSettings();
 }
+function newDrawing(){
+  if(!confirm('現在の図面を初期状態に戻します。必要な図面は先にJSON保存してください。新規作成しますか？'))return;
+  window.location.reload();
+}
 function loadSample(){
   if(hasUnsavedChanges()){
     if(!confirmReplaceDrawing())return;
@@ -892,7 +1116,7 @@ function saveJSON(){
 }
 function loadJSON(){
   const input=document.createElement("input");input.type="file";input.accept=".json";
-  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const loaded=WallModel.normalize(JSON.parse(r.result));if(!confirmReplaceDrawing())return;dragEnd();data=loaded;selected=null;markDrawingSaved();render()}catch(e){alert("JSONを読み込めませんでした")}};if(input.files[0])r.readAsText(input.files[0])};input.click();
+  input.onchange=()=>{const r=new FileReader();r.onload=()=>{try{const loaded=WallModel.normalize(JSON.parse(r.result));if(!confirmReplaceDrawing())return;dragEnd();data=loaded;selected=null;render();markDrawingSaved()}catch(e){alert("JSONを読み込めませんでした")}};if(input.files[0])r.readAsText(input.files[0])};input.click();
 }
 newWall();
 newWall();

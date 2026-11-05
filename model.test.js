@@ -5,6 +5,284 @@ const vm=require('node:vm');
 const M=require('./model.js');
 const wall=(extra={})=>({id:'w1',type:'wall',x:910,y:910,length:2730,angle:0,thickness:140,...extra});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`);
+
+test('floor and tatami colors validate, preserve defaults and survive save/load',()=>{
+  assert.equal(M.materialColors({type:'flooring'}).base,'#eddbb9');
+  assert.equal(M.materialColors({type:'tatami'}).base,'#d5d8a0');
+  for(const type of ['flooring','tatami']){
+    const f={id:'f',type,x:0,y:0,width:880,height:1760,angle:0,color:'#80a0c0'};
+    assert.deepEqual(M.materialColors(f),{base:'#80a0c0',line:'#66809a',edge:'#405060'});
+    assert.equal(M.normalize({version:3,walls:[],fixtures:[f]}).fixtures[0].color,f.color);
+    for(const color of ['red','#fff','url(test)',null])assert.throws(()=>M.normalize({version:3,walls:[],fixtures:[{...f,color}]}));
+  }
+});
+
+test('unrelated material edits preserve default palettes and explicit colors',()=>{
+  for(const type of ['flooring','tatami']){
+    const {run,nodes}=app();run(`addFixture('${type}')`);
+    const initialPalette=run('JSON.stringify(WallModel.materialColors(selected))');
+    const defaultColor=run('WallModel.materialColors(selected).base');
+    for(const [id,value] of Object.entries({pxx:'123',pyy:'456',pww:'900',phh:'1800',pang:'0',plabel:type,pfloorwall:'140',pfloordirection:'0',pcolor:defaultColor.toUpperCase()}))nodes.set(id,{value});
+    run('applyProps()');
+    assert.equal(run('selected.x'),123);assert.equal(run('selected.width'),900);
+    assert.equal(run('Object.hasOwn(selected,"color")'),false);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),initialPalette);
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+    assert.equal(run('Object.hasOwn(selected,"color")'),false);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),initialPalette);
+    nodes.get('pcolor').value='#80a0c0';run('applyProps()');
+    assert.equal(run('selected.color'),'#80a0c0');
+    nodes.get('pcolor').value=defaultColor;run('applyProps()');
+    assert.equal(run('selected.color'),defaultColor); // Explicit color stays explicit, even at the default base.
+    const explicitPalette=run('JSON.stringify(WallModel.materialColors(selected))');
+    nodes.get('pxx').value='789';run('applyProps()');
+    assert.equal(run('selected.color'),defaultColor);
+    assert.equal(run('JSON.stringify(WallModel.materialColors(selected))'),explicitPalette);
+  }
+});
+
+test('color inputs apply to flooring and tatami patterns',()=>{
+  const {run,nodes}=app();
+  for(const type of ['flooring','tatami']){
+    run(`addFixture('${type}')`);
+    assert.ok(nodes.get('properties').innerHTML.includes('type="color"'));
+    for(const [id,value] of Object.entries({pxx:'0',pyy:'0',pww:'880',phh:'1760',pang:'0',plabel:type,pfloorwall:'140',pfloordirection:'0',pcolor:'#80a0c0'}))nodes.set(id,{value});
+    run('applyProps()');assert.equal(run('selected.color'),'#80a0c0');
+    const group=nodes.get('objects').children.find(g=>g.dataset.id===run('selected.id'));
+    const pattern=group.children[0].children[0];
+    assert.equal(pattern.children[0].attrs.fill,'#80a0c0');assert.equal(pattern.children[1].attrs.stroke,'#66809a');
+    if(type==='tatami')assert.equal(group.children[2].attrs.fill,'#405060');
+  }
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
+  assert.equal(run('data.fixtures.every(f=>f.color==="#80a0c0")'),true);
+});
+
+test('tatami size presets fill dimensions without discarding edits and preserve square or landscape shapes',()=>{
+  const {run,nodes}=app();run('addFixture("tatami")');
+  for(const [kind,width,height] of [['kyoma',955,1910],['edoma',880,1760],['danchima',850,1700]]){
+    nodes.set('pww',{value:'880'});nodes.set('phh',{value:'1760'});
+    nodes.set('plabel',{value:'編集中'});
+    run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(width));assert.equal(nodes.get('phh').value,String(height));
+    assert.equal(nodes.get('plabel').value,'編集中');assert.equal(run('selected.width'),880);
+    nodes.get('pww').value='880';nodes.get('phh').value='880';run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(width));assert.equal(nodes.get('phh').value,String(width));
+    nodes.get('pww').value='1760';nodes.get('phh').value='880';run(`setTatamiSize('${kind}')`);
+    assert.equal(nodes.get('pww').value,String(height));assert.equal(nodes.get('phh').value,String(width));
+  }
+});
+
+test('floor finishes render in creation order beneath walls and doors, including after import',()=>{
+  for(const types of [['tatami','flooring'],['flooring','tatami'],['tatami','doma','flooring']]){
+    const {run,nodes}=app();
+    run('addFixture("door")');
+    for(const type of types)run(`addFixture('${type}');selected.x=910;selected.y=910`);
+    const expected=JSON.parse(run('JSON.stringify([...data.fixtures.filter(f=>["tatami","flooring","doma"].includes(f.type)).map(f=>f.id),...data.walls.map(w=>w.id),data.fixtures[0].id])'));
+    const order=()=>nodes.get('objects').children.filter(g=>g.dataset.id).map(g=>g.dataset.id);
+    run('selected=null;render()');assert.deepEqual(order(),expected);
+    run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');assert.deepEqual(order(),expected);
+  }
+});
+
+test('tatami snaps either side to wall faces and both walls at a corner',()=>{
+  const mat={id:'mat',type:'tatami',x:100,y:100,width:880,height:1760,angle:0};
+  const top=wall({id:'top',x:0,y:0,length:3640}),left=wall({id:'left',x:0,y:0,length:3640,angle:90});
+  const corner=M.snapTatami(mat,[top,left]);
+  assert.equal(corner.x,70);assert.equal(corner.y,70);assert.ok(corner.target);
+  const bottom=M.snapTatami({...mat,y:-1900},[top]);assert.equal(bottom.y,-1830);
+  const right=M.snapTatami({...mat,x:-1000},[left]);assert.equal(right.x,-950);
+  assert.equal(M.snapTatami(mat,[{...top,length:500}]).target,null);
+  const free=M.snapTatami({...mat,x:500.2,y:1000.7},[]);assert.deepEqual(free,{x:500,y:1001,target:null});
+  const rotated=M.snapTatami({...mat,x:500,y:550,angle:90},[top]);
+  // Rotated bounding box is 1760 wide, 880 high; top edge sits at y+440.
+  assert.equal(rotated.target,null); // Outside snap tolerance.
+  const nearTop=M.snapTatami({...mat,x:500,y:-300,angle:90},[top]);
+  assert.equal(nearTop.y+440,70);
+  assert.equal(M.snapTatami({...mat,angle:45},[top]).target,null);
+});
+
+test('tatami and square mats create, edit, snap, rotate and round-trip',()=>{
+  const {run,nodes}=app();run('addFixture("tatami")');
+  assert.equal(run('selected.width'),880);assert.equal(run('selected.height'),1760);
+  run('addFixture("tatamiSquare")');assert.equal(run('selected.type'),'tatami');
+  assert.equal(run('selected.width'),880);assert.equal(run('selected.height'),880);
+  for(const [id,value] of Object.entries({pxx:'100',pyy:'500',pww:'850',phh:'850',pang:'0',plabel:'半畳'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.width'),850);assert.equal(run('selected.height'),850);
+  run('data.walls=[{id:"wall",type:"wall",x:0,y:0,length:3640,angle:90,thickness:140}];svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:100,clientY:500,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:90,clientY:500});dragEnd()');
+  assert.equal(run('selected.x'),70);
+  run('rotateSelected(90)');assert.equal(run('selected.angle'),90);
+  const group=nodes.get('objects').children.find(g=>g.dataset.id===run('selected.id'));
+  assert.equal(group.children[1].attrs.width,85);assert.equal(group.children[1].attrs.height,85);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[1];render()');
+  assert.equal(run('selected.width'),850);assert.equal(run('selected.angle'),90);
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),1);
+});
+
+test('floors stay axis-aligned without rotation inputs or keyboard rotation',()=>{
+  const {run,nodes,dispatch}=app();
+  for(const type of ['doma','flooring']){
+    run(`selected=data.walls[0];selected.angle=90;addFixture('${type}')`);
+    assert.equal(run('selected.angle'),0);
+    const html=nodes.get('properties').innerHTML;
+    assert.ok(!html.includes('id="pang"'));assert.ok(!html.includes('rotateSelected('));
+    dispatch('keydown',{key:'r'});assert.equal(run('selected.angle'),0);
+    dispatch('keydown',{key:'R',shiftKey:true});assert.equal(run('selected.angle'),0);
+    run('rotateSelected(90)');assert.equal(run('selected.angle'),0);
+    run('selected.angle=90;data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures.at(-1);render()');
+    assert.equal(run('selected.angle'),0);
+  }
+});
+
+test('floor connections remove only matching insets and meet without gaps',()=>{
+  for(const type of ['doma','flooring']){
+    const a={id:'a',type,x:0,y:0,width:1820,height:1820,angle:0,wallThickness:140,connections:['right']};
+    const b={...a,id:'b',x:1820,connections:['left']};
+    const left=M.floorArea(a),right=M.floorArea(b);
+    assert.deepEqual(left,{x:70,y:70,width:1750,height:1680});
+    assert.equal(a.x+left.x+left.width,b.x+right.x);
+    assert.deepEqual(M.floorArea({...a,connections:['top','bottom','left','right']}),{x:0,y:0,width:1820,height:1820});
+    const data={version:3,walls:[],fixtures:[a,b]};
+    assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))).fixtures,[a,b]);
+    assert.throws(()=>M.floorArea({...a,connections:['bad']}));
+    assert.throws(()=>M.floorArea({...a,connections:'right'}));
+  }
+  assert.throws(()=>M.floorArea({type:'flooring',width:1820,height:1820,floorDirection:45}));
+});
+
+test('flooring edits connections and board direction, renders behind walls and round-trips',()=>{
+  const {run,nodes}=app();run('addFixture("flooring")');
+  assert.equal(run('selected.type'),'flooring');
+  for(const [id,value] of Object.entries({pxx:'1820',pyy:'0',pww:'1820',phh:'1820',pang:'90',pfloorwall:'140',plabel:'LDK', 'pfloor-left':'floor','pfloor-right':'wall','pfloor-top':'wall','pfloor-bottom':'floor',pfloordirection:'90'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('JSON.stringify(selected.connections)'), '["bottom","left"]');
+  assert.equal(run('selected.floorDirection'),90);
+  const g=nodes.get('objects').children[0],pattern=g.children[0].children[0];
+  assert.equal(g.dataset.id,run('selected.id'));
+  assert.equal(pattern.attrs.patternTransform,'rotate(0) translate(-182,0) rotate(90)');
+  const rect=g.children[1];assert.equal(rect.attrs.x,0);assert.equal(rect.attrs.width,175);
+  assert.equal(rect.attrs.height,175);assert.equal(rect.attrs.stroke,undefined);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.floorDirection'),90);assert.equal(run('selected.connections.includes("left")'),true);
+});
+
+test('doma floors inset from wall centerlines and validate imported sizes',()=>{
+  const f={id:'floor',type:'doma',x:455,y:455,width:1820,height:910,angle:0,wallThickness:140};
+  assert.deepEqual(M.floorArea(f),{x:70,y:70,width:1680,height:770});
+  assert.deepEqual(M.floorArea({...f,wallThickness:0}),{x:0,y:0,width:1820,height:910});
+  const data={version:3,walls:[],fixtures:[f]};
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))).fixtures[0],f);
+  for(const wallThickness of [-1,910,Infinity])assert.throws(()=>M.normalize({...data,fixtures:[{...f,wallThickness}]}));
+});
+
+test('doma UI inherits wall origin, renders behind walls, edits, moves and rotates',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];addFixture("doma")');
+  assert.equal(run('selected.x'),455);assert.equal(run('selected.y'),455);
+  const floor=nodes.get('objects').children[0];
+  assert.equal(floor.dataset.id,run('selected.id'));
+  assert.equal(floor.children[0].attrs.width,168);assert.equal(floor.children[0].attrs.x,7);
+  assert.equal(nodes.get('objects').children[1].dataset.id,'w1');
+  for(const [id,value] of Object.entries({pxx:'910',pyy:'455',pww:'2730',phh:'1820',pang:'90',pfloorwall:'200',plabel:'玄関土間'}))nodes.set(id,{value});
+  run('applyProps()');
+  assert.equal(run('selected.width'),2730);assert.equal(run('selected.wallThickness'),200);
+  assert.equal(nodes.get('objects').children[0].attrs.transform,'translate(91,45.5) rotate(0)');
+  nodes.get('pfloorwall').value='1820';run('applyProps()');assert.equal(run('selected.wallThickness'),200);
+  run('svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:910,clientY:455,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:1400,clientY:900});dragEnd()');
+  assert.equal(run('selected.x'),1365);assert.equal(run('selected.y'),910);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render();rotateSelected(-90)');
+  assert.equal(run('selected.angle'),0);assert.equal(run('selected.label'),'玄関土間');
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),0);
+});
+
+test('single-line text derives dimensions, validates size and survives JSON import',()=>{
+  const f={id:'text1',type:'text',x:10.4,y:20.7,angle:30,label:'居室\nA',fontSize:150};
+  const data=M.normalize({version:3,walls:[],fixtures:[f]});
+  const t=data.fixtures[0];
+  assert.equal(t.label,'居室 A');assert.equal(t.x,10);assert.equal(t.y,21);
+  assert.ok(M.textSpec({...f,label:'居室 ABC'}).width>t.width);
+  assert.ok(M.textSpec({...f,fontSize:300}).width>t.width);
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))),data);
+  for(const fontSize of [0,-1,Infinity,10001])assert.throws(()=>M.textSpec({...f,fontSize}));
+  assert.throws(()=>M.textSpec({...f,label:null}));
+});
+
+test('text UI edits content, measures natural width, rotates, moves and deletes',()=>{
+  const {run,nodes}=app();run('addText()');
+  assert.equal(run('selected.type'),'text');
+  assert.ok(nodes.get('properties').innerHTML.includes('pfontsize'));
+  for(const [id,value] of Object.entries({ptext:'寝室 <6帖>',pfontsize:'180',pxx:'123.4',pyy:'456.7',pang:'0'}))nodes.set(id,{value});
+  run('applyProps()');assert.equal(run('selected.label'),'寝室 <6帖>');
+  assert.equal(run('selected.x'),123);assert.equal(run('selected.y'),457);
+  const g=nodes.get('objects').children.find(n=>n.dataset.id===run('selected.id'));
+  assert.equal(g.children[1].textContent,'寝室 <6帖>');
+  assert.equal(g.children[0].attrs.fill,'transparent');
+  assert.equal(g.children[1].attrs['font-size'],18);
+  // Supply a browser font measurement to verify the automatic width calculation.
+  run('const originalCreate=document.createElementNS;document.createElementNS=(ns,tag)=>{const n=originalCreate(ns,tag);if(tag==="text")n.getComputedTextLength=()=>321;return n};render();document.createElementNS=originalCreate');
+  assert.equal(run('selected.width'),3246);
+  run('rotateSelected(90)');assert.equal(run('selected.angle'),90);
+  run('svgPoint=e=>({x:e.clientX,y:e.clientY});startDrag({button:0,clientX:123,clientY:457,preventDefault(){},stopPropagation(){}},selected);dragMove({clientX:400,clientY:700});dragEnd()');
+  assert.equal(run('selected.x'),364);assert.equal(run('selected.y'),728);
+  run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));selected=data.fixtures[0];render()');
+  assert.equal(run('selected.label'),'寝室 <6帖>');assert.equal(run('selected.fontSize'),180);
+  run('deleteSelected()');assert.equal(run('data.fixtures.length'),0);
+});
+
+test('resizing either wall end projects onto its axis and snaps length to 455mm',()=>{
+  for(const angle of [0,90,180,270,37])for(const edge of [0,1]){
+    const w=wall({angle}),u={x:Math.cos(angle*Math.PI/180),y:Math.sin(angle*Math.PI/180)};
+    const fixed=M.endpoints(w)[edge===0?1:0],sign=edge===0?-1:1;
+    const point={x:fixed.x+sign*u.x*3200-u.y*600,y:fixed.y+sign*u.y*3200+u.x*600};
+    const result=M.resizeWall(w,edge,point);
+    assert.equal(result.length,3185);
+    assert.ok(Number.isInteger(result.x)&&Number.isInteger(result.y));
+    const preserved=M.endpoints({...w,...result})[edge===0?1:0];
+    assert.ok(Math.hypot(preserved.x-fixed.x,preserved.y-fixed.y)<=Math.SQRT1_2+1e-7);
+    assert.equal(M.resizeWall(w,edge,fixed).length,455);
+    assert.equal(M.resizeWall(w,edge,{x:fixed.x-sign*u.x*910,y:fixed.y-sign*u.y*910}).length,910);
+  }
+});
+
+test('dragging either endpoint turns through all four directions around the fixed endpoint',()=>{
+  for(const originalAngle of [0,90,180,270,37])for(const edge of [0,1])for(const turn of [0,90,180,270]){
+    const w=wall({angle:originalAngle}),fixed=M.endpoints(w)[edge===0?1:0];
+    const angle=(originalAngle+turn)%360,a=angle*Math.PI/180,sign=edge===0?-1:1;
+    const point={x:fixed.x+sign*3200*Math.cos(a)-600*Math.sin(a),y:fixed.y+sign*3200*Math.sin(a)+600*Math.cos(a)};
+    const result=M.resizeWall(w,edge,point);
+    assert.equal(result.angle,angle);assert.equal(result.length,3185);
+    const kept=M.endpoints({...w,...result})[edge===0?1:0];
+    assert.ok(Math.hypot(kept.x-fixed.x,kept.y-fixed.y)<=Math.SQRT1_2+1e-7);
+  }
+  const w=wall();
+  assert.equal(M.resizeWall(w,1,{x:w.x+1000,y:w.y+999}).angle,0);
+  assert.equal(M.resizeWall(w,1,{x:w.x+999,y:w.y+1000}).angle,90);
+});
+
+test('import rounds mm specifications while keeping angles and rejects rounded zero sizes',()=>{
+  const data=M.normalize({version:3,walls:[wall({x:12.49,y:-3.7,length:2000.6,thickness:139.8,angle:37.25})],
+    fixtures:[{id:'f',type:'wash',x:1.1,y:2.9,width:750.2,height:606.666,angle:12.5}],
+    page:{x:0.1,y:-0.7,width:12000.3,height:8500.6}});
+  assert.deepEqual(data.walls[0],wall({x:12,y:-4,length:2001,thickness:140,angle:37.25}));
+  assert.equal(data.fixtures[0].height,607);assert.equal(data.fixtures[0].angle,12.5);
+  assert.deepEqual(data.page,{x:0,y:-1,width:12000,height:8501});
+  assert.deepEqual(M.normalize(JSON.parse(JSON.stringify(data))),data);
+  assert.throws(()=>M.normalize({version:3,walls:[wall({length:0.2})],fixtures:[]}));
+});
+
+test('wall handles resize through pointer handlers and movement stores integer mm',()=>{
+  const {run,nodes}=app();
+  run('selected=data.walls[0];render();svgPoint=e=>({x:e.clientX,y:e.clientY})');
+  const handle=nodes.get('objects').children.at(-1);
+  handle.events.pointerdown[0]({button:0,preventDefault(){},stopPropagation(){}});
+  run('dragMove({clientX:455+3200,clientY:1000})');
+  assert.equal(run('selected.length'),3185);assert.equal(run('selected.y'),455);
+  run('dragMove({clientX:455,clientY:455+1850})');
+  assert.equal(run('selected.angle'),90);assert.equal(run('selected.length'),1820);
+  assert.equal(run('selected.x'),455);assert.equal(run('selected.y'),455);
+  run('dragEnd()');assert.equal(run('dragState'),null);
+  run('startDrag({button:0,clientX:455,clientY:455,preventDefault(){},stopPropagation(){}},selected);WallModel.snapWallOriginal=WallModel.snapWall;WallModel.snapWall=()=>({x:123.4,y:456.7});dragMove({clientX:600,clientY:600});WallModel.snapWall=WallModel.snapWallOriginal');
+  assert.equal(run('selected.x'),123);assert.equal(run('selected.y'),457);
+  run('dragEnd()');
+});
 test('wall endpoints and physical extents in every cardinal direction',()=>{
   for(const [angle,x,y] of [[0,3640,910],[90,910,3640],[180,-1820,910],[270,910,-1820]]){
     const w=wall({angle}),end=M.endpoints(w)[1],body=M.body(w);
@@ -89,6 +367,45 @@ test('unsaved drawings warn on exit and replacement, and successful JSON downloa
   run("FileReader=class{readAsText(){this.result='invalid';this.onload()}};loadJSON()");
   assert.equal(run('JSON.stringify(data)'),edited);
   assert.equal(run('hasUnsavedChanges()'),true);
+});
+
+test('loaded text stays saved after browser measurement and fractional edits update save notice',()=>{
+  const {run,nodes}=app();
+  run(`
+    const createElementOriginal=document.createElementNS;
+    document.createElementNS=(ns,tag)=>{const n=createElementOriginal(ns,tag);if(tag==='text')n.getComputedTextLength=()=>123;return n};
+    document.createElement=()=>({click(){this.files=[{}];this.onchange()}});
+    globalThis.FileReader=class{readAsText(){this.result=JSON.stringify({version:3,walls:[],fixtures:[{id:'text',type:'text',x:0,y:0,label:'Test',fontSize:150}]});this.onload()}};
+    loadJSON();
+  `);
+  assert.equal(run('hasUnsavedChanges()'),false);
+  run('render()');assert.equal(run('hasUnsavedChanges()'),false);
+  run('data.fixtures[0].x=1.7;render()');
+  assert.equal(run('data.fixtures[0].x'),2);
+  assert.equal(run('hasUnsavedChanges()'),true);
+  assert.match(nodes.get('save-state').textContent,/未保存/);
+});
+
+test('new drawing reloads only after confirmation',()=>{
+  const {run}=app();
+  run('let reloads=0;window.location={reload(){reloads++}};globalThis.confirm=()=>false;newDrawing()');
+  assert.equal(run('reloads'),0);
+  run('globalThis.confirm=()=>true;newDrawing()');
+  assert.equal(run('reloads'),1);
+});
+
+test('every fixture has one pair of quarter-turn buttons that preserve its position and dimensions',()=>{
+  const {run,nodes}=app();
+  for(const type of ['window','fixedWindow','door','slidingDoor','doubleSlidingDoor','foldingDoor','washer','stairs','landing','turnStairs','kitchen','wash','toilet','bath','text']){
+    run(type==='text'?'addText()':`addFixture('${type}')`);
+    const html=nodes.get('properties').innerHTML;
+    assert.equal((html.match(/onclick="rotateSelected\(-90\)"/g)||[]).length,1,type);
+    assert.equal((html.match(/onclick="rotateSelected\(90\)"/g)||[]).length,1,type);
+    const before=run('JSON.stringify([selected.x,selected.y,selected.width,selected.height])');
+    run('selected.angle=0;rotateSelected(-90)');assert.equal(run('selected.angle'),270);
+    run('rotateSelected(90)');assert.equal(run('selected.angle'),0);
+    assert.equal(run('JSON.stringify([selected.x,selected.y,selected.width,selected.height])'),before);
+  }
 });
 
 test('menu and modal dialogs suppress drawing shortcuts and restore focus on close',()=>{
@@ -434,7 +751,7 @@ test('washstand back snaps to wall faces in four orientations, without crossing 
   assert.equal(M.snapWash({...f,x:300},[wall]).x,375);
   assert.equal(M.snapWash({...f,x:1000,angle:90},[wall]).target,null);
   const {run,nodes}=app();run('selected=data.walls[0];addFixture("wash")');
-  near(run('selected.height'),910*2/3);
+  assert.equal(run('selected.height'),607);
   assert.equal(run('selected.y'),525);
   for(const angle of [0,90,180,270]){
     if(angle)run('rotateSelected(90)');
@@ -586,11 +903,11 @@ test('dimension UI persists annotations, follows edits, and removes dangling ref
   run('selected=data.walls[0]');nodes.set('pdimwall',{value:'w2'});
   run('addDimension("inner");addDimension("outer")');
   assert.equal(run('data.dimensions.length'),2);
-  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3500 mm');
-  assert.equal(nodes.get('objects').children.at(-1).children.at(-1).textContent,'外寸 3780 mm');
+  const dimensionLabels=()=>nodes.get('objects').children.filter(g=>g.children.at(-1)?.attrs?.['font-size']===11).map(g=>g.children.at(-1).textContent);
+  assert.deepEqual(dimensionLabels(),['内寸 3500 mm','外寸 3780 mm']);
   run('editDimension(0,"-910");data.walls[1].y+=455;render()');
   assert.equal(run('data.dimensions[0].offset'),-910);
-  assert.equal(nodes.get('objects').children.at(-2).children.at(-1).textContent,'内寸 3955 mm');
+  assert.equal(dimensionLabels()[0],'内寸 3955 mm');
   run('data=WallModel.normalize(JSON.parse(JSON.stringify(data)));render()');
   assert.equal(run('data.dimensions.length'),2);assert.equal(run('data.dimensions[0].offset'),-910);
   run('data.walls[1].angle=90;render()');

@@ -3,6 +3,28 @@
   const direction=w=>{const a=w.angle*Math.PI/180;return {x:Math.cos(a),y:Math.sin(a)}};
   function endpoints(w){const u=direction(w);return [{x:w.x,y:w.y},{x:w.x+w.length*u.x,y:w.y+w.length*u.y}]}
   function body(w){return {x:-w.thickness/2,y:-w.thickness/2,width:w.length+w.thickness,height:w.thickness}}
+  // Round persisted specifications, keeping calculated geometry at full precision.
+  function integerMM(o){
+    for(const key of ['x','y','length','thickness','width','height','wallThickness','offset']){
+      if(Number.isFinite(o[key]))o[key]=Math.round(o[key]);
+    }
+    return o;
+  }
+  function textSpec(f){
+    if(typeof f.label!=='string'||!Number.isFinite(f.fontSize)||Math.round(f.fontSize)<1||f.fontSize>10000)throw Error('Invalid text');
+    const label=f.label.replace(/[\r\n\u2028\u2029]+/g,' '),fontSize=Math.round(f.fontSize);
+    const em=Array.from(label).reduce((sum,c)=>sum+(/[\u0020-\u007e]/.test(c)?0.6:1),0);
+    return {label,fontSize,width:Math.max(1,Math.ceil((em+0.2)*fontSize)),height:Math.ceil(fontSize*1.3)};
+  }
+  function resizeWall(w,edge,point,step=455){
+    const ends=endpoints(w),fixed=ends[edge===0?1:0],sign=edge===0?-1:1;
+    const dx=(point.x-fixed.x)*sign,dy=(point.y-fixed.y)*sign;
+    // Snap relative to the original angle so imported diagonal walls also turn in quarter turns.
+    const turn=Math.hypot(dx,dy)<1e-7?0:Math.round((Math.atan2(dy,dx)*180/Math.PI-w.angle)/90);
+    const angle=((w.angle+turn*90)%360+360)%360,u=direction({angle});
+    const length=Math.max(step,Math.round((dx*u.x+dy*u.y)/step)*step);
+    return integerMM({x:edge===0?fixed.x-length*u.x:w.x,y:edge===0?fixed.y-length*u.y:w.y,length,angle});
+  }
   function snapWall(w,walls,tolerance=182){
     let best=null;
     const ends=endpoints(w);
@@ -125,15 +147,61 @@
     }
     return {x:best.x,y:best.y,target:best.target};
   }
+  function snapTatami(f,walls,tolerance=182){
+    const a=(f.angle??0)*Math.PI/180,u={x:Math.cos(a),y:Math.sin(a)},v={x:-Math.sin(a),y:Math.cos(a)};
+    // Fixtures rotate around the center of their unrotated bounding rectangle.
+    const center={x:f.x+f.width/2,y:f.y+f.height/2},choices=[];
+    for(const wall of walls){
+      const t=direction(wall),n={x:-t.y,y:t.x};
+      if(Math.min(Math.abs(t.x*u.x+t.y*u.y),Math.abs(t.x*v.x+t.y*v.y))>1e-6)continue;
+      const across=Math.abs(n.x*u.x+n.y*u.y)*f.width/2+Math.abs(n.x*v.x+n.y*v.y)*f.height/2;
+      const along=Math.abs(t.x*u.x+t.y*u.y)*f.width/2+Math.abs(t.x*v.x+t.y*v.y)*f.height/2;
+      const signed=(center.x-wall.x)*n.x+(center.y-wall.y)*n.y;
+      const side=signed<0?-1:1,delta=side*(across+wall.thickness/2)-signed;
+      if(Math.abs(delta)>tolerance)continue;
+      choices.push({wall,t,n,along,dx:delta*n.x,dy:delta*n.y});
+    }
+    let best=null;
+    const consider=active=>{
+      const dx=active.reduce((sum,c)=>sum+c.dx,0),dy=active.reduce((sum,c)=>sum+c.dy,0);
+      if(active.some(c=>{
+        const pos=(center.x+dx-c.wall.x)*c.t.x+(center.y+dy-c.wall.y)*c.t.y;
+        return pos<c.along-1e-6||pos>c.wall.length-c.along+1e-6;
+      }))return;
+      const distance=Math.hypot(dx,dy);
+      if(!best||active.length>best.count||(active.length===best.count&&distance<best.distance))best={dx,dy,distance,count:active.length};
+    };
+    for(let i=0;i<choices.length;i++){
+      consider([choices[i]]);
+      for(let j=i+1;j<choices.length;j++)if(Math.abs(choices[i].n.x*choices[j].n.x+choices[i].n.y*choices[j].n.y)<1e-6)consider([choices[i],choices[j]]);
+    }
+    return best?{x:Math.round(f.x+best.dx),y:Math.round(f.y+best.dy),target:{x:center.x+best.dx,y:center.y+best.dy}}:
+      {x:Math.round(f.x),y:Math.round(f.y),target:null};
+  }
   function snapToilet(f){
     const dx=f.origin==='center'?0:f.width/2,dy=f.origin==='center'?0:f.height/2;
     const center=v=>Math.round((v-455)/910)*910+455;
     return {x:center(f.x+dx)-dx,y:center(f.y+dy)-dy};
   }
-  function bath(f){
+  function materialColors(f){
+    const defaults=f.type==='tatami'?{base:'#d5d8a0',line:'#b4ba7f',edge:'#65714b'}:{base:'#eddbb9',line:'#c2a77e',edge:'#c2a77e'};
+    if(f.color===undefined)return defaults;
+    if(typeof f.color!=='string'||!/^#[0-9a-f]{6}$/i.test(f.color))throw Error('Invalid material color');
+    const shade=factor=>'#'+[1,3,5].map(i=>Math.round(parseInt(f.color.slice(i,i+2),16)*factor).toString(16).padStart(2,'0')).join('');
+    return {base:f.color,line:shade(.8),edge:shade(.5)};
+  }
+  function floorArea(f){
     const thickness=f.wallThickness??140;
     if(!Number.isFinite(f.width)||!Number.isFinite(f.height)||!Number.isFinite(thickness)||thickness<0||thickness>=Math.min(f.width,f.height))throw Error('Invalid bath size');
-    const x=thickness/2,y=thickness/2,width=f.width-thickness,height=f.height-thickness;
+    const connections=f.connections??[];
+    if(!Array.isArray(connections)||connections.some(e=>!['top','bottom','left','right'].includes(e)))throw Error('Invalid floor connections');
+    if(f.type==='flooring'&&![0,90].includes(f.floorDirection??0))throw Error('Invalid floor direction');
+    const inset=edge=>connections.includes(edge)?0:thickness/2;
+    const x=inset('left'),y=inset('top'),width=f.width-x-inset('right'),height=f.height-y-inset('bottom');
+    return {x,y,width,height};
+  }
+  function bath(f){
+    const {x,y,width,height}=floorArea(f);
     return {x,y,width,height,tub:{x,y,width,height:height*.45}};
   }
   function dimension(d,walls){
@@ -152,7 +220,7 @@
   function page(value){
     const p=value??{x:0,y:0,width:12000,height:8500};
     if(![p.x,p.y,p.width,p.height].every(Number.isFinite)||p.width<100||p.height<100||p.width>200000||p.height>200000)throw Error('Invalid page');
-    return {x:p.x,y:p.y,width:p.width,height:p.height};
+    return integerMM({x:p.x,y:p.y,width:p.width,height:p.height});
   }
   function normalize(input){
     if(!input || ![1,2,3].includes(input.version))throw Error('Unsupported version');
@@ -164,7 +232,7 @@
       if(typeof o.id!=='string'||!o.id||ids.has(o.id))throw Error('Invalid id');
       ids.add(o.id);
       for(const k of fields)if(!Number.isFinite(o[k]))throw Error('Invalid '+k);
-      return o;
+      return integerMM(o);
     }
     const result={version:3,units:'mm',grid:{major:910,minor:455},walls:walls.map(w=>{
       // Legacy width is the nominal length; x/y already denoted the reference point.
@@ -174,10 +242,12 @@
       if(w.wallKind==='railing')o.wallKind='railing';
       return o;
     }),fixtures:fixtures.map(f=>{
-      const o=check({...f,angle:f.angle??0},['x','y','width','height','angle']);
+      const o=check({...f,...(f.type==='text'?textSpec(f):{}),angle:f.angle??0},['x','y','width','height','angle']);
       if(o.width<=0||o.height<=0||typeof o.type!=='string'||o.type==='wall')throw Error('Invalid fixture');
       if(['stairs','landing','turnStairs'].includes(o.type))stairs(o);
       if(o.type==='bath')bath(o);
+      if(['doma','flooring'].includes(o.type)){floorArea(o);o.angle=0}
+      if(['flooring','tatami'].includes(o.type))materialColors(o);
       if(o.type==='kitchen'&&o.kitchenKind!==undefined&&!['counter','sink','stove','corner','combined'].includes(o.kitchenKind))throw Error('Invalid kitchen kind');
       return o;
     })};
@@ -186,13 +256,13 @@
       result.dimensions=input.dimensions.map(d=>{
         if(!d||!['inner','outer'].includes(d.kind)||!Number.isFinite(d.offset)||d.wallA===d.wallB||
           !result.walls.some(w=>w.id===d.wallA)||!result.walls.some(w=>w.id===d.wallB))throw Error('Invalid dimension');
-        return {wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset};
+        return integerMM({wallA:d.wallA,wallB:d.wallB,kind:d.kind,offset:d.offset});
       });
     }
     if(input.page!==undefined)result.page=page(input.page);
     return result;
   }
-  const api={endpoints,body,snapWall,normalize,stairs,stairEndLines,bath,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
+  const api={endpoints,body,integerMM,textSpec,resizeWall,snapWall,normalize,stairs,stairEndLines,bath,floorArea,materialColors,snapTatami,snapToilet,washBack,snapWash,nextKitchen,snapKitchen,dimension,page};
   if(typeof module!=='undefined')module.exports=api;
   else root.WallModel=api;
 })(globalThis);
