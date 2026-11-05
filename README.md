@@ -237,6 +237,14 @@ node --test model.test.js
 
 結果が `fail 0` ならすべて成功です。テストとは別に、`index.html` をブラウザで開き、ドラッグ・数値編集・JSON保存読込・印刷プレビューを確認してください。
 
+## 公開URL・検索向け設定
+
+正式な公開URLは [https://gridori.brdfld.com/](https://gridori.brdfld.com/) です。`index.html` に検索向けのタイトル・説明文と、このURLを正規URLとして指定する `rel="canonical"` を設定しています。`/index.html` やNetlifyの別URLでアクセスされた場合も、正規URLは同じ指定になります。リダイレクトを行う設定ではありません。
+
+`robots.txt` でクロールを許可し、`https://gridori.brdfld.com/sitemap.xml` を案内しています。サイトマップには現在、アプリのトップページを掲載しています。公開後はGoogle Search Consoleで正式URLの登録状況を確認し、サイトマップを送信してください。これらの設定だけで検索への登録や順位を保証するものではありません。
+
+mainへ反映する場合は、`index.html` のメタ情報、`robots.txt`、`sitemap.xml` と本説明をまとめて取り込んでください。正式URLを変更する場合は、canonical・robots.txt内のサイトマップURL・sitemap.xml内のURL・本説明を合わせて更新します。ローカル起動の手順は変わりません。
+
 ## ファイル構成
 
 | ファイル | 内容 |
@@ -246,6 +254,8 @@ node --test model.test.js
 | `model.test.js` | 計算処理と簡易DOMを使った回帰テスト |
 | `README.md` | 利用方法・機能・制限事項 |
 | `CHANGELOG.md` | バージョンごとの変更履歴 |
+| `robots.txt` | クロール許可とサイトマップの案内 |
+| `sitemap.xml` | 公開ページの正規URL一覧 |
 | `LICENSE` | ライセンス全文 |
 
 ## 不具合・改善要望
