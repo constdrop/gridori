@@ -272,7 +272,7 @@ let appDialogReturnFocus=null;
 let savedDrawing=null;
 function hasUnsavedChanges(){return savedDrawing!==null&&JSON.stringify(data)!==savedDrawing}
 function updateSaveState(){
-  document.getElementById('save-state').textContent=hasUnsavedChanges()?'未保存の変更あり — メニューからJSON保存':'自動保存なし — メニューからJSON保存';
+  document.getElementById('save-state').textContent=hasUnsavedChanges()?'未保存の変更があります':'';
 }
 function markDrawingSaved(){savedDrawing=JSON.stringify(data);updateSaveState()}
 function confirmReplaceDrawing(){return !hasUnsavedChanges()||confirm('未保存の変更があります。現在の図面を置き換えてもよいですか？必要な図面はキャンセルしてJSON保存してください。')}
